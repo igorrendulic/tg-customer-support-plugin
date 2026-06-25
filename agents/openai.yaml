@@ -9,6 +9,7 @@ commands:
   sync: "scripts/tg-support sync"
   index: "scripts/tg-support index"
   search: "scripts/tg-support search '<query>'"
+  repo_evidence: "scripts/tg-support repo-evidence '<query>'"
   knowledge_add: "scripts/tg-support knowledge-add --text '<note>' --effective-date <YYYY-MM-DD>"
   stats: "scripts/tg-support stats <kind>"
-posting_policy: "Show target, exact message, evidence, and any conflicts; require explicit post/cancel confirmation before running confirm."
+posting_policy: "Show target, exact message, evidence, repository stale warnings, and any conflicts; require explicit post/cancel confirmation before running confirm."

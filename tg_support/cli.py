@@ -23,12 +23,14 @@ from tg_support.config import (
 from tg_support.crawler import WebCrawler
 from tg_support.indexing.chunking import chunk_manual_notes, chunk_messages, chunk_pages
 from tg_support.indexing.hybrid import HybridRetriever
+from tg_support.repository import RepositoryManager
 from tg_support.storage.db import SupportDatabase
 from tg_support.storage.schema import CURRENT_SCHEMA_VERSION
 from tg_support.support.context import draft_context
 from tg_support.support.drafting import create_draft
 from tg_support.support.knowledge import KnowledgeError, ManualKnowledgeInput, save_manual_note
 from tg_support.support.posting import PostingError, apply_confirmation
+from tg_support.support.repository_evidence import repository_evidence
 from tg_support.support.stats import active_users, link_usage, message_count, replied_to_users
 from tg_support.telegram_client import MISSING_CREDENTIALS_ERROR, TelegramError, TelegramService, TelethonGateway
 
@@ -145,6 +147,10 @@ def profile_status(config: SupportConfig) -> dict:
         "profile": config.profile,
         "profile_dir": str(config.profile_dir),
         "chat": config.chat,
+        "repository": None
+        if config.repository is None
+        else {"repository": config.repository.repository, "branch": config.repository.branch},
+        "features": {"repository_evidence": config.repository is not None},
         "checks": checks,
         "counts": {"messages": messages, "pages": pages, "chunks": chunks},
         "next_action": next_action,
@@ -160,6 +166,9 @@ def command_setup(args: argparse.Namespace) -> int:
                 "profile": args.profile,
                 "chat": args.chat,
                 "seeds": [{"url": seed, "render": args.render} for seed in args.seed],
+                "repository": None
+                if not args.repository
+                else {"repository": args.repository, "branch": args.repository_branch},
                 "history_limit": args.history_limit,
                 "embedding_model": args.embedding_model,
             },
@@ -266,6 +275,12 @@ def command_draft_context(args: argparse.Namespace) -> int:
     return emit({"ok": True, "context": context})
 
 
+def command_repo_evidence(args: argparse.Namespace) -> int:
+    config = config_for_args(args)
+    evidence = repository_evidence(RepositoryManager(config), args.query, limit=args.limit)
+    return emit({"ok": True, "repository_evidence": evidence})
+
+
 def command_draft_create(args: argparse.Namespace) -> int:
     config, db = db_for_args(args)
     evidence = json.loads(Path(args.evidence_json).read_text()) if args.evidence_json else {}
@@ -312,6 +327,8 @@ def build_parser() -> argparse.ArgumentParser:
     setup.add_argument("--chat", required=True)
     setup.add_argument("--seed", action="append")
     setup.add_argument("--render", choices=["auto", "always", "never"], default="auto")
+    setup.add_argument("--repository")
+    setup.add_argument("--repository-branch", default="production")
     setup.add_argument("--history-limit", type=int, default=1000)
     setup.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
     setup.set_defaults(func=command_setup)
@@ -333,6 +350,11 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("query")
     search.add_argument("--limit", type=int, default=8)
     search.set_defaults(func=command_search)
+
+    repo = sub.add_parser("repo-evidence")
+    repo.add_argument("query")
+    repo.add_argument("--limit", type=int, default=6)
+    repo.set_defaults(func=command_repo_evidence)
 
     stats = sub.add_parser("stats")
     stats.add_argument("kind", choices=["message-count", "active-users", "replied-to-users", "links"])

@@ -26,9 +26,16 @@ class SeedConfig:
 
 
 @dataclass(frozen=True)
+class RepositoryConfig:
+    repository: str
+    branch: str
+
+
+@dataclass(frozen=True)
 class SupportConfig:
     chat: str
     seeds: tuple[SeedConfig, ...]
+    repository: RepositoryConfig | None = None
     profile: str = DEFAULT_PROFILE
     history_limit: int = 1000
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
@@ -84,6 +91,37 @@ def canonicalize_url(value: str) -> str:
     return urlunparse((parsed.scheme.lower(), parsed.netloc.lower(), path, "", "", ""))
 
 
+def canonicalize_repository(value: str) -> str:
+    raw = value.strip()
+    if not raw:
+        raise ConfigError("Repository is required when repository evidence is configured.")
+    if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", raw):
+        return f"https://github.com/{raw}.git"
+    scp_like = re.fullmatch(r"git@github\.com:([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(?:\.git)?", raw)
+    if scp_like:
+        repo_path = scp_like.group(1).removesuffix(".git")
+        return f"git@github.com:{repo_path}.git"
+    parsed = urlparse(raw)
+    if parsed.scheme in {"http", "https", "ssh", "file"} and parsed.netloc:
+        path = parsed.path.rstrip("/")
+        return urlunparse((parsed.scheme, parsed.netloc, path, "", "", ""))
+    if parsed.scheme == "file" and parsed.path:
+        return urlunparse((parsed.scheme, "", parsed.path.rstrip("/"), "", "", ""))
+    path = Path(raw).expanduser()
+    if path.exists():
+        return str(path)
+    raise ConfigError("Repository must be an owner/repo shorthand, URL, or existing local path.")
+
+
+def normalize_branch(value: str | None) -> str:
+    branch = (value or "production").strip()
+    if not branch:
+        raise ConfigError("Repository branch is required.")
+    if branch.startswith("-") or ".." in branch or branch.endswith(".lock") or any(ch.isspace() for ch in branch):
+        raise ConfigError("Repository branch is invalid.")
+    return branch
+
+
 def profile_dir(profile: str = DEFAULT_PROFILE, base_dir: Path | None = None) -> Path:
     base = base_dir or DEFAULT_BASE_DIR
     safe_profile = re.sub(r"[^A-Za-z0-9_.-]+", "-", profile).strip("-") or DEFAULT_PROFILE
@@ -116,11 +154,21 @@ def config_from_dict(data: dict[str, Any], profile_dir_override: Path | None = N
         if render not in {"auto", "always", "never"}:
             raise ConfigError("Seed render mode must be auto, always, or never.")
         seeds.append(SeedConfig(canonicalize_url(item["url"]), render=render, scope=item.get("scope")))
+    repository = None
+    repo_data = data.get("repository")
+    if repo_data:
+        if isinstance(repo_data, str):
+            repo_data = {"repository": repo_data}
+        repository = RepositoryConfig(
+            repository=canonicalize_repository(str(repo_data.get("repository", ""))),
+            branch=normalize_branch(repo_data.get("branch")),
+        )
     profile = str(data.get("profile", DEFAULT_PROFILE))
     pdir = profile_dir_override or profile_dir(profile)
     return SupportConfig(
         chat=chat,
         seeds=tuple(seeds),
+        repository=repository,
         profile=profile,
         history_limit=int(data.get("history_limit", 1000)),
         embedding_model=str(data.get("embedding_model", DEFAULT_EMBEDDING_MODEL)),
@@ -140,6 +188,11 @@ def write_config(config: SupportConfig) -> Path:
         "vector_mode": config.vector_mode,
         "seeds": [seed.__dict__ for seed in config.seeds],
     }
+    if config.repository is not None:
+        payload["repository"] = {
+            "repository": config.repository.repository,
+            "branch": config.repository.branch,
+        }
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     return path
 

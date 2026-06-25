@@ -31,6 +31,18 @@ scripts/tg-support --profile default setup --chat my-support-chat --seed https:/
 
 Chat inputs such as `channel-name`, `@channel-name`, and `https://t.me/channel-name` normalize to the same configured chat.
 
+Repository Evidence is optional. Add a GitHub repository and branch when you want behavior or debugging answers grounded in production-branch code:
+
+```bash
+scripts/tg-support --profile default setup \
+  --chat my-support-chat \
+  --seed https://example.com/blog \
+  --repository owner/project \
+  --repository-branch production
+```
+
+Repository setup uses your existing local `git` or `gh` authentication. The support workflow does not ask for GitHub credentials and does not modify the configured repository.
+
 Seed render modes:
 
 - `auto`: fetch static HTML first and render JavaScript app-shell pages.
@@ -67,6 +79,16 @@ scripts/tg-support --profile default status
 
 The first version exposes Telethon and Playwright through the helper-managed runtime. Tests use fakes; real Telegram access still requires local Telegram API credentials.
 
+## Repository Evidence
+
+Use Repository Evidence for product-behavior, capability, API-behavior, or debugging questions:
+
+```bash
+scripts/tg-support --profile default repo-evidence "account transfer api"
+```
+
+The command manages a profile-local checkout of the configured branch and checks whether it is stale before reading code. If refresh fails, the JSON output includes a warning and may still include evidence from the last checkout. Agents should show that warning before relying on the code.
+
 ## Manual Knowledge
 
 Manual Knowledge Notes are profile-local support facts, policy changes, or operational caveats that should influence future answers. Prefer saving them through Codex: Codex should parse the note text, effective date, optional expiry date, and caveats, then show those fields for operator confirmation before it runs the local save command.
@@ -91,4 +113,4 @@ Remove the profile directory for the profile you want to reset:
 rm -rf ~/.tg-support/profiles/default
 ```
 
-Do this only when you intend to delete the local config, Telegram API credentials, Telegram session, SQLite database, and indexes for that profile.
+Do this only when you intend to delete the local config, optional repository checkout state, Telegram API credentials, Telegram session, SQLite database, and indexes for that profile.

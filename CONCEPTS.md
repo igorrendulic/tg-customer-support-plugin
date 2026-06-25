@@ -25,6 +25,9 @@ The source-linked retrieval result set an agent uses to answer analytics questio
 ### Manual Knowledge Note
 A Support Operator-confirmed local corpus entry for dated support facts, policy changes, operational caveats, or other durable knowledge that may override or reinterpret older Telegram and web evidence within an effective or expiry window.
 
+### Repository Evidence
+Read-only, profile-local evidence gathered from a configured GitHub repository and branch during product-behavior or debugging support questions. Repository Evidence from the configured production branch outranks Manual Knowledge Notes, Telegram evidence, and web evidence when sources disagree.
+
 ### Conflict Check
 The retrieval-time safety step that compares an applicable Manual Knowledge Note against indexed Telegram or web evidence, re-queries fresher evidence when needed, and asks the Support Operator before resolving contested support truth.
 
@@ -39,4 +42,4 @@ The recorded outcome of applying a Confirmation Token, whether posted, cancelled
 
 ## Relationships
 
-A Support Operator uses an Agent Surface, but the Agent Surface calls the Local Core rather than owning support behavior. The Local Core reads and writes a Support Profile. Manual Knowledge Notes can appear in Evidence Bundles after Conflict Checks. Evidence Bundles inform Drafts, Drafts create Confirmation Tokens, and applying a Confirmation Token produces a Post Attempt.
+A Support Operator uses an Agent Surface, but the Agent Surface calls the Local Core rather than owning support behavior. The Local Core reads and writes a Support Profile. Repository Evidence can appear in Evidence Bundles for product-behavior or debugging questions. Manual Knowledge Notes can appear in Evidence Bundles after Conflict Checks. Evidence Bundles inform Drafts, Drafts create Confirmation Tokens, and applying a Confirmation Token produces a Post Attempt.
