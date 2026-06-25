@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from tg_support.indexing.chunking import chunk_messages, chunk_pages
+from datetime import date
+
+from tg_support.indexing.chunking import chunk_manual_notes, chunk_messages, chunk_pages
 from tg_support.indexing.hybrid import HybridRetriever, reciprocal_rank_fusion
 from tg_support.storage.db import ChunkRecord
 from tests.conftest import seed_messages
@@ -33,3 +35,29 @@ def test_stale_index_detects_changed_chunks(db):
     assert retriever.stale() is False
     db.upsert_chunk("web", 99, 0, "new text")
     assert retriever.stale() is True
+
+
+def test_active_manual_note_ranks_above_older_web_evidence(db):
+    db.upsert_page("https://example.com/account-transfer", "Transfer", "Account transfer is available for old email addresses.")
+    db.create_manual_note("Account transfer is discontinued. Users must register a new email address.", "2026-04-02")
+    chunk_pages(db)
+    chunk_manual_notes(db)
+    retriever = HybridRetriever(db)
+    retriever.build()
+
+    results = retriever.search("account transfer email", as_of=date(2026, 6, 25), limit=2)
+
+    assert results[0]["source_type"] == "manual"
+    assert results[0]["metadata"]["effective_date"] == "2026-04-02"
+
+
+def test_inactive_manual_notes_are_excluded_from_current_search(db):
+    db.create_manual_note("Passkey setup policy changes next year.", "2027-01-01")
+    db.create_manual_note("Discount policy expired.", "2026-01-01", expires_date="2026-02-01")
+    chunk_manual_notes(db)
+    retriever = HybridRetriever(db)
+    retriever.build()
+
+    results = retriever.search("policy", as_of=date(2026, 6, 25), limit=5)
+
+    assert results == []

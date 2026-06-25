@@ -67,6 +67,22 @@ scripts/tg-support --profile default status
 
 The first version exposes Telethon and Playwright through the helper-managed runtime. Tests use fakes; real Telegram access still requires local Telegram API credentials.
 
+## Manual Knowledge
+
+Manual Knowledge Notes are profile-local support facts, policy changes, or operational caveats that should influence future answers. Prefer saving them through Codex: Codex should parse the note text, effective date, optional expiry date, and caveats, then show those fields for operator confirmation before it runs the local save command.
+
+Direct CLI save is available for confirmed fields:
+
+```bash
+scripts/tg-support --profile default knowledge-add \
+  --text "Account transfers were discontinued. Users must register a new email address." \
+  --effective-date 2026-04-02 \
+  --caveats "Old email addresses are quarantined until further notice."
+scripts/tg-support --profile default index
+```
+
+Use `--expires-date YYYY-MM-DD` when the note should stop applying after a known date. Active notes can outrank older Telegram or web evidence. When search or draft context returns `conflicts`, the agent should show the note, older evidence, and fresher evidence to the operator before using the note as settled truth.
+
 ## Reset
 
 Remove the profile directory for the profile you want to reset:

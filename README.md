@@ -97,6 +97,18 @@ scripts/tg-support --profile default draft-context --user alice
 scripts/tg-support --profile default draft-create --message-id 123 --text "Thanks, try the reset link here..."
 ```
 
+Save dated support knowledge through Codex after reviewing the parsed fields, or directly through the CLI after the operator has confirmed the note:
+
+```bash
+scripts/tg-support --profile default knowledge-add \
+  --text "Account transfers were discontinued. Users must register a new email address." \
+  --effective-date 2026-04-02 \
+  --caveats "Old email addresses are quarantined until further notice."
+scripts/tg-support --profile default index
+```
+
+Active manual knowledge can appear in search or draft evidence ahead of older Telegram and web sources. If returned JSON includes `conflicts`, show the manual note and the competing evidence to the operator before answering or drafting.
+
 Posting is intentionally a separate confirmed action. Show the operator the exact draft, target, and evidence first, then use the generated post or cancel token:
 
 ```bash
@@ -115,7 +127,7 @@ Set `TG_SUPPORT_HOME` to move profile data elsewhere.
 
 ## Codex And Claude
 
-The Codex skill lives in `skills/telegram-support/`. It uses the same `scripts/tg-support` commands as the CLI examples above and treats JSON CLI output as the source of truth for evidence, draft IDs, and confirmation tokens.
+The Codex skill lives in `skills/telegram-support/`. It uses the same `scripts/tg-support` commands as the CLI examples above and treats JSON CLI output as the source of truth for evidence, conflicts, draft IDs, and confirmation tokens.
 
 Claude companion guidance is in `agents/claude.md` and `docs/claude-usage.md`. Claude should use the same local CLI and must not post directly or infer confirmation from casual approval.
 
@@ -123,7 +135,7 @@ Claude companion guidance is in `agents/claude.md` and `docs/claude-usage.md`. C
 
 The project follows the same practical README shape as tools like CLI Printing Press: start with what the tool is, install both the agent-facing surface and the binary/core, show the workflow, then explain the non-obvious architecture. Here, the non-obvious part is the safety boundary: agent prompts can retrieve evidence and draft text, but only deterministic CLI code can consume a confirmation token and write to Telegram.
 
-SQLite is the durable local metadata store. Lexical and vector indexes are rebuildable projections linked back to Telegram messages and crawled pages, so answers can cite source records instead of relying on agent memory.
+SQLite is the durable local metadata store. Lexical and vector indexes are rebuildable projections linked back to Telegram messages, crawled pages, and Manual Knowledge Notes, so answers can cite source records instead of relying on agent memory.
 
 ## Development
 

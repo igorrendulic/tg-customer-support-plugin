@@ -20,7 +20,13 @@ The operator-owned local state boundary for one configured support workflow, inc
 A Support Profile that has the required configuration, profile-local Telegram credentials, a usable Telegram session, synced Telegram history, crawled web seeds, and built indexes for normal support workflows.
 
 ### Evidence Bundle
-The source-linked retrieval result set an agent uses to answer analytics questions or prepare a reply draft.
+The source-linked retrieval result set an agent uses to answer analytics questions or prepare a reply draft, including any Manual Knowledge Notes that influence the answer.
+
+### Manual Knowledge Note
+A Support Operator-confirmed local corpus entry for dated support facts, policy changes, operational caveats, or other durable knowledge that may override or reinterpret older Telegram and web evidence within an effective or expiry window.
+
+### Conflict Check
+The retrieval-time safety step that compares an applicable Manual Knowledge Note against indexed Telegram or web evidence, re-queries fresher evidence when needed, and asks the Support Operator before resolving contested support truth.
 
 ### Draft
 The exact proposed Telegram reply persisted before posting, together with its target, evidence, status, and confirmation choices.
@@ -33,4 +39,4 @@ The recorded outcome of applying a Confirmation Token, whether posted, cancelled
 
 ## Relationships
 
-A Support Operator uses an Agent Surface, but the Agent Surface calls the Local Core rather than owning support behavior. The Local Core reads and writes a Support Profile. Evidence Bundles inform Drafts, Drafts create Confirmation Tokens, and applying a Confirmation Token produces a Post Attempt.
+A Support Operator uses an Agent Surface, but the Agent Surface calls the Local Core rather than owning support behavior. The Local Core reads and writes a Support Profile. Manual Knowledge Notes can appear in Evidence Bundles after Conflict Checks. Evidence Bundles inform Drafts, Drafts create Confirmation Tokens, and applying a Confirmation Token produces a Post Attempt.
