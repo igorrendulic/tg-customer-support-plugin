@@ -1,0 +1,25 @@
+{
+  "name": "telegram-support-agent",
+  "version": "0.1.0",
+  "description": "Local-first Telegram support analytics, drafting, and confirmed posting workflows.",
+  "author": {
+    "name": "Local Support Tools"
+  },
+  "license": "MIT",
+  "keywords": ["telegram", "support", "analytics", "local-first"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Telegram Support Agent",
+    "shortDescription": "Local Telegram support analytics and confirmed reply workflows.",
+    "longDescription": "Indexes one configured Telegram support chat and public resources locally, prepares evidence-backed analytics and replies, and posts only after explicit confirmation.",
+    "developerName": "Local Support Tools",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "defaultPrompt": [
+      "Prepare a reply for a Telegram user.",
+      "Summarize common support complaints.",
+      "Show the most active support chat users."
+    ],
+    "brandColor": "#2563EB"
+  }
+}
