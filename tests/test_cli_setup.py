@@ -215,6 +215,8 @@ def test_skill_documents_status_preflight():
     assert "status" in skill
     assert "next_action" in skill
     assert "credentials --api-id <id> --api-hash-stdin" in skill
+    assert "knowledge-add" in skill
+    assert "conflicts" in skill
 
 
 def test_openai_agent_exposes_setup_commands():
@@ -222,3 +224,18 @@ def test_openai_agent_exposes_setup_commands():
     assert "status:" in agent
     assert "credentials:" in agent
     assert "login:" in agent
+    assert "knowledge_add:" in agent
+
+
+def test_reply_workflow_requires_conflict_resolution():
+    workflow = Path("skills/telegram-support/references/reply-workflow.md").read_text()
+    assert "conflicts" in workflow
+    assert "Manual Knowledge Note" in workflow
+
+
+def test_operator_docs_describe_manual_knowledge():
+    readme = Path("README.md").read_text()
+    setup = Path("docs/setup.md").read_text()
+    assert "knowledge-add" in readme
+    assert "Manual Knowledge Notes" in setup
+    assert "conflicts" in setup

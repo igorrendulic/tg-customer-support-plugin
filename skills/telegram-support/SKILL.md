@@ -17,7 +17,7 @@ Run commands through the bundled local helper. Resolve the helper relative to th
 
 The first run bootstraps the Python runtime under the operator's local data directory unless `TG_SUPPORT_VENV` overrides it.
 
-The CLI prints JSON. Treat that JSON as the source of truth for local corpus state, evidence, draft IDs, and confirmation tokens.
+The CLI prints JSON. Treat that JSON as the source of truth for local corpus state, evidence, conflict checks, draft IDs, and confirmation tokens.
 
 ## Setup Preflight
 
@@ -39,11 +39,25 @@ If `ok` is false, do not continue into the normal workflow. Use `next_action` to
 
 After each setup command, run `status` again and continue from the new `next_action`. Never print or repeat the API hash back to the operator.
 
+## Manual Knowledge
+
+When the operator asks to save durable support knowledge, extract the note text, effective date, optional expiry date, and caveats from the conversation. Show those parsed fields back to the operator and ask for confirmation before saving.
+
+After confirmation, run:
+
+```bash
+<plugin-root>/scripts/tg-support --profile default knowledge-add --text <text> --effective-date <YYYY-MM-DD>
+```
+
+Add `--expires-date <YYYY-MM-DD>` and `--caveats <text>` when present. If the operator revises or cancels the parsed fields, do not run `knowledge-add` until they confirm the corrected note.
+
+When `search` or `draft-context` returns Manual Knowledge Note evidence, include it in the evidence summary. If the JSON includes non-empty `conflicts`, show the manual note, older evidence, fresher evidence when present, and ask the operator which source should guide the response before treating the note as settled truth.
+
 ## Safety Boundary
 
 Never post to Telegram directly from agent reasoning. A Telegram write is allowed only after:
 
-1. `draft-context` or another retrieval command has produced evidence.
+1. `draft-context` or another retrieval command has produced evidence and any returned `conflicts` are resolved by the operator.
 2. The operator has seen the exact target chat, target user or message ID when available, exact message text, and evidence summary.
 3. The operator explicitly replies with `post` for that exact message and target.
 4. The CLI confirmation command succeeds.

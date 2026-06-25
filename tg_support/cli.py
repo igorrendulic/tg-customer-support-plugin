@@ -21,12 +21,13 @@ from tg_support.config import (
     write_telegram_credentials,
 )
 from tg_support.crawler import WebCrawler
-from tg_support.indexing.chunking import chunk_messages, chunk_pages
+from tg_support.indexing.chunking import chunk_manual_notes, chunk_messages, chunk_pages
 from tg_support.indexing.hybrid import HybridRetriever
 from tg_support.storage.db import SupportDatabase
 from tg_support.storage.schema import CURRENT_SCHEMA_VERSION
 from tg_support.support.context import draft_context
 from tg_support.support.drafting import create_draft
+from tg_support.support.knowledge import KnowledgeError, ManualKnowledgeInput, save_manual_note
 from tg_support.support.posting import PostingError, apply_confirmation
 from tg_support.support.stats import active_users, link_usage, message_count, replied_to_users
 from tg_support.telegram_client import MISSING_CREDENTIALS_ERROR, TelegramError, TelegramService, TelethonGateway
@@ -233,14 +234,15 @@ def command_index(args: argparse.Namespace) -> int:
     config, db = db_for_args(args, initialize=True)
     page_chunks = chunk_pages(db)
     message_chunks = chunk_messages(db)
+    note_chunks = chunk_manual_notes(db)
     run_id = HybridRetriever(db).build(config.embedding_model)
-    return emit({"ok": True, "index_run_id": run_id, "page_chunks": page_chunks, "message_chunks": message_chunks})
+    return emit({"ok": True, "index_run_id": run_id, "page_chunks": page_chunks, "message_chunks": message_chunks, "note_chunks": note_chunks})
 
 
 def command_search(args: argparse.Namespace) -> int:
     _config, db = db_for_args(args)
-    results = HybridRetriever(db).search(args.query, limit=args.limit)
-    return emit({"ok": True, "results": results})
+    search = HybridRetriever(db).search_with_conflicts(args.query, limit=args.limit)
+    return emit({"ok": True, "results": search["evidence"], "conflicts": search["conflicts"]})
 
 
 def command_stats(args: argparse.Namespace) -> int:
@@ -269,6 +271,23 @@ def command_draft_create(args: argparse.Namespace) -> int:
     evidence = json.loads(Path(args.evidence_json).read_text()) if args.evidence_json else {}
     result = create_draft(db, config.chat, args.text, evidence, target_user=args.user, target_message_id=args.message_id)
     return emit({"ok": True, **result, "target_chat": config.chat, "target_user": args.user, "target_message_id": args.message_id, "message_text": args.text})
+
+
+def command_knowledge_add(args: argparse.Namespace) -> int:
+    _config, db = db_for_args(args, initialize=True)
+    try:
+        result = save_manual_note(
+            db,
+            ManualKnowledgeInput(
+                text=args.text,
+                effective_date=args.effective_date,
+                expires_date=args.expires_date,
+                caveats=args.caveats,
+            ),
+        )
+        return emit({"ok": True, **result})
+    except KnowledgeError as exc:
+        return emit({"ok": False, "error": str(exc)}, 2)
 
 
 def command_confirm(args: argparse.Namespace) -> int:
@@ -334,6 +353,13 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--message-id", type=int)
     create.add_argument("--evidence-json")
     create.set_defaults(func=command_draft_create)
+
+    knowledge = sub.add_parser("knowledge-add")
+    knowledge.add_argument("--text", required=True)
+    knowledge.add_argument("--effective-date", required=True)
+    knowledge.add_argument("--expires-date")
+    knowledge.add_argument("--caveats")
+    knowledge.set_defaults(func=command_knowledge_add)
 
     confirm = sub.add_parser("confirm")
     confirm.add_argument("token")

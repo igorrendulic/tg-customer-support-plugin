@@ -1,4 +1,4 @@
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 SCHEMA_SQL = """
 PRAGMA foreign_keys = ON;
@@ -47,9 +47,19 @@ CREATE TABLE IF NOT EXISTS pages (
   error TEXT
 );
 
+CREATE TABLE IF NOT EXISTS manual_notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  text TEXT NOT NULL,
+  effective_date TEXT NOT NULL,
+  expires_date TEXT,
+  caveats TEXT,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS chunks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  source_type TEXT NOT NULL CHECK(source_type IN ('telegram','web')),
+  source_type TEXT NOT NULL CHECK(source_type IN ('telegram','web','manual')),
   source_id INTEGER NOT NULL,
   ordinal INTEGER NOT NULL,
   text TEXT NOT NULL,

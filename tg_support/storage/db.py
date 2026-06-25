@@ -21,6 +21,17 @@ class ChunkRecord:
     metadata: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class ManualNoteRecord:
+    id: int
+    text: str
+    effective_date: str
+    expires_date: str | None
+    caveats: str | None
+    metadata: dict[str, Any]
+    created_at: str
+
+
 class SupportDatabase:
     def __init__(self, path: Path):
         self.path = path
@@ -43,10 +54,65 @@ class SupportDatabase:
     def initialize(self) -> None:
         with self.connect() as conn:
             conn.executescript(SCHEMA_SQL)
+            self._migrate_to_v2(conn)
             conn.execute(
                 "INSERT OR IGNORE INTO schema_version(version) VALUES (?)",
                 (CURRENT_SCHEMA_VERSION,),
             )
+
+    def _migrate_to_v2(self, conn: sqlite3.Connection) -> None:
+        version_row = conn.execute("SELECT COALESCE(MAX(version), 0) AS version FROM schema_version").fetchone()
+        version = 0 if version_row is None else int(version_row["version"])
+        if version >= 2:
+            return
+        chunk_info = conn.execute("PRAGMA table_info(chunks)").fetchall()
+        if not chunk_info:
+            return
+        create_sql_row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'chunks'").fetchone()
+        create_sql = "" if create_sql_row is None else str(create_sql_row["sql"])
+        if "'manual'" in create_sql:
+            return
+        conn.execute("DROP TABLE IF EXISTS lexical_refs")
+        conn.execute("DROP TABLE IF EXISTS vector_refs")
+        conn.execute("ALTER TABLE chunks RENAME TO chunks_old")
+        conn.execute(
+            """
+            CREATE TABLE chunks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              source_type TEXT NOT NULL CHECK(source_type IN ('telegram','web','manual')),
+              source_id INTEGER NOT NULL,
+              ordinal INTEGER NOT NULL,
+              text TEXT NOT NULL,
+              metadata_json TEXT NOT NULL DEFAULT '{}',
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE(source_type, source_id, ordinal)
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO chunks(id, source_type, source_id, ordinal, text, metadata_json, created_at)
+            SELECT id, source_type, source_id, ordinal, text, metadata_json, created_at FROM chunks_old
+            """
+        )
+        conn.execute("DROP TABLE chunks_old")
+        conn.execute(
+            """
+            CREATE TABLE lexical_refs (
+              chunk_id INTEGER PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
+              terms_json TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE vector_refs (
+              chunk_id INTEGER PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
+              embedding_model TEXT NOT NULL,
+              vector_json TEXT NOT NULL
+            )
+            """
+        )
 
     def schema_version(self) -> int | None:
         with self.connect() as conn:
@@ -136,6 +202,40 @@ class SupportDatabase:
             )
             return int(conn.execute("SELECT id FROM pages WHERE url = ?", (url,)).fetchone()["id"])
 
+    def create_manual_note(
+        self,
+        text: str,
+        effective_date: str,
+        expires_date: str | None = None,
+        caveats: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> int:
+        with self.connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO manual_notes(text, effective_date, expires_date, caveats, metadata_json)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (text, effective_date, expires_date, caveats, json.dumps(metadata or {}, sort_keys=True)),
+            )
+            return int(cur.lastrowid)
+
+    def manual_notes(self) -> list[ManualNoteRecord]:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT * FROM manual_notes ORDER BY id").fetchall()
+        return [
+            ManualNoteRecord(
+                id=row["id"],
+                text=row["text"],
+                effective_date=row["effective_date"],
+                expires_date=row["expires_date"],
+                caveats=row["caveats"],
+                metadata=json.loads(row["metadata_json"]),
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
+
     def upsert_chunk(self, source_type: str, source_id: int, ordinal: int, text: str, metadata: dict[str, Any] | None = None) -> int:
         with self.connect() as conn:
             conn.execute(
@@ -183,7 +283,7 @@ class SupportDatabase:
         ]
 
     def count(self, table: str) -> int:
-        if table not in {"chats", "users", "messages", "pages", "chunks", "index_runs", "drafts", "confirmations", "post_attempts"}:
+        if table not in {"chats", "users", "messages", "pages", "manual_notes", "chunks", "index_runs", "drafts", "confirmations", "post_attempts"}:
             raise ValueError("Unsupported table")
         with self.connect() as conn:
             return int(conn.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()["count"])
