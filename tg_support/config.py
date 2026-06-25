@@ -11,7 +11,7 @@ from urllib.parse import urlparse, urlunparse
 
 DEFAULT_PROFILE = "default"
 DEFAULT_EMBEDDING_MODEL = "local-hash-v1"
-DEFAULT_BASE_DIR = Path(os.environ.get("TG_SUPPORT_HOME", Path.home() / ".local" / "share" / "tg-support"))
+DEFAULT_BASE_DIR = Path(os.environ.get("TG_SUPPORT_HOME", Path.home() / ".tg-support"))
 
 
 class ConfigError(ValueError):

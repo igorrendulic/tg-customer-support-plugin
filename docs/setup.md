@@ -3,13 +3,13 @@
 This package is local-first. Telegram sessions, SQLite data, and indexes live under:
 
 ```text
-~/.local/share/tg-support/profiles/<profile>/
+~/.tg-support/profiles/<profile>/
 ```
 
 The source tree should not contain profile data. The `scripts/tg-support` helper also bootstraps its own Python runtime outside the source tree by default:
 
 ```text
-~/.local/share/tg-support/runtime/.venv
+~/.tg-support/.venv
 ```
 
 Set `TG_SUPPORT_VENV` to use a different runtime environment.
@@ -51,7 +51,7 @@ The first version exposes Telethon and Playwright through the helper-managed run
 Remove the profile directory for the profile you want to reset:
 
 ```bash
-rm -rf ~/.local/share/tg-support/profiles/default
+rm -rf ~/.tg-support/profiles/default
 ```
 
 Do this only when you intend to delete the local Telegram session, SQLite database, and indexes for that profile.
