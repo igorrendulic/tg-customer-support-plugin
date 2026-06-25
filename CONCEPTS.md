@@ -16,6 +16,9 @@ The shared implementation boundary that owns Telegram access, crawling, storage,
 ### Support Profile
 The operator-owned local state boundary for one configured support workflow, including configuration, Telegram session state, SQLite data, and rebuildable indexes.
 
+### Ready Profile
+A Support Profile that has the required configuration, profile-local Telegram credentials, a usable Telegram session, synced Telegram history, crawled web seeds, and built indexes for normal support workflows.
+
 ### Evidence Bundle
 The source-linked retrieval result set an agent uses to answer analytics questions or prepare a reply draft.
 

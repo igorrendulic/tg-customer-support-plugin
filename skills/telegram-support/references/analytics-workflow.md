@@ -1,5 +1,7 @@
 # Analytics Workflow
 
+Run `status` first. If the profile is not ready, follow the setup preflight in `../SKILL.md` instead of answering from an incomplete corpus.
+
 Use structured stats commands for direct counts:
 
 ```bash

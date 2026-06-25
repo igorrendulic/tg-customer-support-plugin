@@ -18,8 +18,8 @@ def apply_confirmation(db: SupportDatabase, token: str, gateway: TelegramGateway
         draft = conn.execute("SELECT * FROM drafts WHERE id = ?", (conf["draft_id"],)).fetchone()
         if draft is None:
             raise PostingError("Draft no longer exists.")
-        conn.execute("UPDATE confirmations SET consumed_at = CURRENT_TIMESTAMP WHERE id = ?", (conf["id"],))
         if conf["action"] == "cancel":
+            conn.execute("UPDATE confirmations SET consumed_at = CURRENT_TIMESTAMP WHERE id = ?", (conf["id"],))
             conn.execute("UPDATE drafts SET status = 'cancelled' WHERE id = ?", (draft["id"],))
             conn.execute("INSERT INTO post_attempts(draft_id, confirmation_id, status) VALUES (?, ?, 'cancelled')", (draft["id"], conf["id"]))
             return {"status": "cancelled", "draft_id": draft["id"]}
@@ -41,6 +41,7 @@ def apply_confirmation(db: SupportDatabase, token: str, gateway: TelegramGateway
             )
         raise
     with db.connect() as conn:
+        conn.execute("UPDATE confirmations SET consumed_at = CURRENT_TIMESTAMP WHERE id = ?", (conf["id"],))
         conn.execute("UPDATE drafts SET status = 'posted' WHERE id = ?", (draft["id"],))
         conn.execute(
             "INSERT INTO post_attempts(draft_id, confirmation_id, status, telegram_message_id) VALUES (?, ?, 'posted', ?)",

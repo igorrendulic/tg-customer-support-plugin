@@ -13,7 +13,26 @@ codex plugin marketplace add igorrendulic/tg-customer-support-plugin
 codex plugin add telegram-support-agent@tg-customer-support-plugin
 ```
 
-That installs the Codex workflow. The first time the workflow runs the bundled `scripts/tg-support` helper, it creates its own runtime environment, installs the Telegram and browser-rendering dependencies, and installs Chromium for Playwright.
+That installs the Codex workflow. After that, open Codex in the workspace where you want to use the support agent and ask it to use the `telegram-support` skill, for example:
+
+```text
+Use the telegram-support skill to set up profile default for @my-support-chat with seed https://example.com/blog.
+```
+
+The first time the workflow runs the bundled `scripts/tg-support` helper, it creates its own runtime environment, installs the Telegram and browser-rendering dependencies, and installs Chromium for Playwright. Then ask Codex to log in, sync Telegram history, crawl the configured seed, and build the local index:
+
+```text
+Use the telegram-support skill to log in and build the local corpus for profile default.
+```
+
+Codex will first check profile readiness. If Telegram API credentials are missing, it will ask you for the API ID and API hash from `https://my.telegram.org`, store them under the local profile, and continue setup from there.
+
+Once indexing finishes, ask normal support questions in Codex:
+
+```text
+Use the telegram-support skill to find recent passkey setup issues.
+Use the telegram-support skill to draft a reply for message 123.
+```
 
 To run the CLI directly outside Codex:
 
@@ -61,10 +80,12 @@ scripts/tg-support --profile default setup \
 Then build the local corpus:
 
 ```bash
+scripts/tg-support --profile default credentials --api-id 123456
 scripts/tg-support --profile default login
 scripts/tg-support --profile default sync
 scripts/tg-support --profile default crawl
 scripts/tg-support --profile default index
+scripts/tg-support --profile default status
 ```
 
 Ask questions or prepare a reply draft:
@@ -87,6 +108,8 @@ Local profile data lives outside the source tree by default:
 ```text
 ~/.tg-support/profiles/<profile>/
 ```
+
+That profile directory contains the profile config, Telegram API credentials, Telegram session file, SQLite database, and rebuildable indexes. Treat it as sensitive local state.
 
 Set `TG_SUPPORT_HOME` to move profile data elsewhere.
 

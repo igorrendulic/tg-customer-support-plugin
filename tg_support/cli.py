@@ -1,20 +1,35 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import sys
 from pathlib import Path
 
-from tg_support.config import ConfigError, DEFAULT_EMBEDDING_MODEL, SupportConfig, config_from_dict, load_config, profile_dir, write_config
+from tg_support.config import (
+    ConfigError,
+    DEFAULT_EMBEDDING_MODEL,
+    SupportConfig,
+    clear_telegram_authorization,
+    credentials_from_dict,
+    config_from_dict,
+    load_config,
+    load_telegram_credentials,
+    profile_dir,
+    write_config,
+    write_telegram_authorization,
+    write_telegram_credentials,
+)
 from tg_support.crawler import WebCrawler
 from tg_support.indexing.chunking import chunk_messages, chunk_pages
 from tg_support.indexing.hybrid import HybridRetriever
 from tg_support.storage.db import SupportDatabase
+from tg_support.storage.schema import CURRENT_SCHEMA_VERSION
 from tg_support.support.context import draft_context
 from tg_support.support.drafting import create_draft
 from tg_support.support.posting import PostingError, apply_confirmation
 from tg_support.support.stats import active_users, link_usage, message_count, replied_to_users
-from tg_support.telegram_client import TelegramError, TelegramService, TelethonGateway
+from tg_support.telegram_client import MISSING_CREDENTIALS_ERROR, TelegramError, TelegramService, TelethonGateway
 
 
 def emit(payload: dict, code: int = 0) -> int:
@@ -25,6 +40,16 @@ def emit(payload: dict, code: int = 0) -> int:
 def config_for_args(args: argparse.Namespace) -> SupportConfig:
     cfg_path = Path(args.config) if getattr(args, "config", None) else profile_dir(args.profile) / "config.json"
     return load_config(cfg_path)
+
+
+def load_config_for_status(args: argparse.Namespace) -> tuple[SupportConfig | None, str | None]:
+    cfg_path = Path(args.config) if getattr(args, "config", None) else profile_dir(args.profile) / "config.json"
+    try:
+        return load_config(cfg_path), None
+    except FileNotFoundError:
+        return None, "missing_config"
+    except (ConfigError, OSError, json.JSONDecodeError):
+        return None, "invalid_config"
 
 
 def db_for_args(args: argparse.Namespace, initialize: bool = False) -> tuple[SupportConfig, SupportDatabase]:
@@ -38,7 +63,91 @@ def db_for_args(args: argparse.Namespace, initialize: bool = False) -> tuple[Sup
 def telegram_service_for_args(args: argparse.Namespace) -> tuple[SupportConfig, TelegramService]:
     config = config_for_args(args)
     db = SupportDatabase(config.db_path)
-    return config, TelegramService(db, TelethonGateway(config.session_path))
+    try:
+        credentials = load_telegram_credentials(config.credentials_path)
+    except (ConfigError, OSError, json.JSONDecodeError) as exc:
+        raise TelegramError(MISSING_CREDENTIALS_ERROR) from exc
+    return config, TelegramService(db, TelethonGateway(config.session_path, credentials.api_id, credentials.api_hash))
+
+
+def table_count(db: SupportDatabase, table: str) -> int:
+    try:
+        return db.count(table)
+    except Exception:
+        return 0
+
+
+def usable_page_count(db: SupportDatabase) -> int:
+    try:
+        with db.connect() as conn:
+            return int(
+                conn.execute("SELECT COUNT(*) AS count FROM pages WHERE status = 'ok' AND length(text) > 0").fetchone()["count"]
+            )
+    except Exception:
+        return 0
+
+
+def database_ready(db: SupportDatabase) -> bool:
+    try:
+        return db.schema_version() == CURRENT_SCHEMA_VERSION
+    except Exception:
+        return False
+
+
+def profile_status(config: SupportConfig) -> dict:
+    db = SupportDatabase(config.db_path)
+    credentials_valid = False
+    try:
+        load_telegram_credentials(config.credentials_path)
+        credentials_valid = True
+    except (ConfigError, OSError, json.JSONDecodeError):
+        pass
+
+    database_ok = database_ready(db)
+    session_present = config.session_path.exists() and config.authorization_path.exists()
+    messages = table_count(db, "messages") if database_ok else 0
+    pages = usable_page_count(db) if database_ok else 0
+    chunks = table_count(db, "chunks") if database_ok else 0
+    index_stale = True
+    if chunks:
+        try:
+            index_stale = HybridRetriever(db).stale(config.embedding_model)
+        except Exception:
+            index_stale = True
+
+    checks = {
+        "config": True,
+        "database": database_ok,
+        "credentials": credentials_valid,
+        "telegram_session": session_present,
+        "telegram_history": messages > 0,
+        "web_crawl": pages > 0,
+        "chunks": chunks > 0,
+        "index": chunks > 0 and not index_stale,
+    }
+    if not checks["database"]:
+        next_action = "setup"
+    elif not checks["credentials"]:
+        next_action = "credentials"
+    elif not checks["telegram_session"]:
+        next_action = "login"
+    elif not checks["telegram_history"]:
+        next_action = "sync"
+    elif not checks["web_crawl"]:
+        next_action = "crawl"
+    elif not checks["chunks"] or not checks["index"]:
+        next_action = "index"
+    else:
+        next_action = "ready"
+    return {
+        "ok": next_action == "ready",
+        "profile": config.profile,
+        "profile_dir": str(config.profile_dir),
+        "chat": config.chat,
+        "checks": checks,
+        "counts": {"messages": messages, "pages": pages, "chunks": chunks},
+        "next_action": next_action,
+    }
 
 
 def command_setup(args: argparse.Namespace) -> int:
@@ -63,6 +172,31 @@ def command_setup(args: argparse.Namespace) -> int:
         return emit({"ok": False, "error": str(exc)}, 2)
 
 
+def command_credentials(args: argparse.Namespace) -> int:
+    try:
+        config = config_for_args(args)
+        credentials = credentials_from_dict({"api_id": args.api_id, "api_hash": telegram_api_hash_for_args(args)})
+        path = write_telegram_credentials(config, credentials)
+        return emit({"ok": True, "credentials": str(path), "api_id": credentials.api_id, "api_hash": "<redacted>"})
+    except (ConfigError, OSError, json.JSONDecodeError) as exc:
+        return emit({"ok": False, "error": str(exc)}, 2)
+
+
+def telegram_api_hash_for_args(args: argparse.Namespace) -> str:
+    if args.api_hash_stdin:
+        return sys.stdin.readline().rstrip("\r\n")
+    if sys.stdin.isatty():
+        return getpass.getpass("Telegram API hash: ")
+    raise ConfigError("Telegram API hash is required. Use --api-hash-stdin or run credentials interactively.")
+
+
+def command_status(args: argparse.Namespace) -> int:
+    config, error = load_config_for_status(args)
+    if config is None:
+        return emit({"ok": False, "profile": args.profile, "checks": {"config": False}, "next_action": "setup", "error": error})
+    return emit(profile_status(config))
+
+
 def command_crawl(args: argparse.Namespace) -> int:
     config, db = db_for_args(args, initialize=True)
     crawler = WebCrawler(db)
@@ -71,17 +205,24 @@ def command_crawl(args: argparse.Namespace) -> int:
 
 
 def command_login(args: argparse.Namespace) -> int:
-    _config, service = telegram_service_for_args(args)
+    config = None
     try:
+        config, service = telegram_service_for_args(args)
         ok = service.login()
+        if ok:
+            write_telegram_authorization(config)
+        else:
+            clear_telegram_authorization(config)
         return emit({"ok": ok})
     except TelegramError as exc:
+        if config is not None:
+            clear_telegram_authorization(config)
         return emit({"ok": False, "error": str(exc)}, 2)
 
 
 def command_sync(args: argparse.Namespace) -> int:
-    config, service = telegram_service_for_args(args)
     try:
+        config, service = telegram_service_for_args(args)
         count = service.ingest_history(config.chat, args.limit or config.history_limit)
         return emit({"ok": True, "messages": count})
     except TelegramError as exc:
@@ -133,9 +274,12 @@ def command_draft_create(args: argparse.Namespace) -> int:
 def command_confirm(args: argparse.Namespace) -> int:
     config, db = db_for_args(args)
     try:
-        result = apply_confirmation(db, args.token, TelethonGateway(config.session_path))
+        credentials = load_telegram_credentials(config.credentials_path)
+        result = apply_confirmation(db, args.token, TelethonGateway(config.session_path, credentials.api_id, credentials.api_hash))
         return emit({"ok": True, **result})
-    except PostingError as exc:
+    except (ConfigError, OSError, json.JSONDecodeError):
+        return emit({"ok": False, "error": MISSING_CREDENTIALS_ERROR}, 2)
+    except (PostingError, TelegramError) as exc:
         return emit({"ok": False, "error": str(exc)}, 2)
 
 
@@ -153,6 +297,12 @@ def build_parser() -> argparse.ArgumentParser:
     setup.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
     setup.set_defaults(func=command_setup)
 
+    credentials = sub.add_parser("credentials")
+    credentials.add_argument("--api-id", required=True)
+    credentials.add_argument("--api-hash-stdin", action="store_true")
+    credentials.set_defaults(func=command_credentials)
+
+    sub.add_parser("status").set_defaults(func=command_status)
     sub.add_parser("crawl").set_defaults(func=command_crawl)
     sub.add_parser("login").set_defaults(func=command_login)
     sync = sub.add_parser("sync")
