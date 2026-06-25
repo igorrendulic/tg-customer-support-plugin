@@ -1,0 +1,20 @@
+{
+  "name": "tg-customer-support-plugin",
+  "interface": {
+    "displayName": "Telegram Customer Support"
+  },
+  "plugins": [
+    {
+      "name": "telegram-support-agent",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

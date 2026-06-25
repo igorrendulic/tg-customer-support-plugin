@@ -6,7 +6,13 @@ This package is local-first. Telegram sessions, SQLite data, and indexes live un
 ~/.local/share/tg-support/profiles/<profile>/
 ```
 
-The source tree should not contain profile data.
+The source tree should not contain profile data. The `scripts/tg-support` helper also bootstraps its own Python runtime outside the source tree by default:
+
+```text
+~/.local/share/tg-support/runtime/.venv
+```
+
+Set `TG_SUPPORT_VENV` to use a different runtime environment.
 
 ## Install For Development
 
@@ -38,7 +44,7 @@ scripts/tg-support crawl
 scripts/tg-support index
 ```
 
-The first version exposes Telethon and Playwright as optional adapter dependencies. Tests use fakes; real Telegram access requires local Telegram API credentials and the `telegram` extra.
+The first version exposes Telethon and Playwright through the helper-managed runtime. Tests use fakes; real Telegram access still requires local Telegram API credentials.
 
 ## Reset
 
