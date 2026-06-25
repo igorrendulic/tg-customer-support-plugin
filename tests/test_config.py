@@ -8,6 +8,7 @@ from tg_support.config import (
     DEFAULT_BASE_DIR,
     ConfigError,
     canonicalize_url,
+    canonicalize_repository,
     config_from_dict,
     credentials_from_dict,
     load_telegram_credentials,
@@ -44,6 +45,43 @@ def test_default_profile_dir_uses_dot_tg_support_home():
 
 def test_canonical_url_removes_fragment_and_trailing_slash():
     assert canonicalize_url("https://Example.com/blog/#top") == "https://example.com/blog"
+
+
+def test_repository_config_round_trips_owner_repo(tmp_path):
+    config = config_from_dict(
+        {"chat": "@support", "seeds": ["example.com/blog"], "repository": {"repository": "owner/project", "branch": "production"}},
+        profile_dir_override=tmp_path / "profile",
+    )
+    assert config.repository is not None
+    assert config.repository.repository == "https://github.com/owner/project.git"
+    assert config.repository.branch == "production"
+
+
+def test_repository_config_accepts_git_ssh_shorthand(tmp_path):
+    config = config_from_dict(
+        {
+            "chat": "@support",
+            "seeds": ["example.com/blog"],
+            "repository": {"repository": "git@github.com:owner/project.git", "branch": "production"},
+        },
+        profile_dir_override=tmp_path / "profile",
+    )
+    assert config.repository is not None
+    assert config.repository.repository == "git@github.com:owner/project.git"
+
+
+def test_repository_config_is_optional(tmp_path):
+    config = config_from_dict({"chat": "@support", "seeds": ["example.com/blog"]}, profile_dir_override=tmp_path / "profile")
+    assert config.repository is None
+
+
+def test_repository_config_rejects_invalid_values():
+    with pytest.raises(ConfigError):
+        canonicalize_repository("not a repo")
+    with pytest.raises(ConfigError):
+        config_from_dict(
+            {"chat": "@support", "seeds": ["example.com/blog"], "repository": {"repository": "owner/project", "branch": "../main"}}
+        )
 
 
 def test_telegram_credentials_validate():

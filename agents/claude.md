@@ -16,6 +16,8 @@ scripts/tg-support index
 
 Use `scripts/tg-support stats <kind>` for direct counts and `scripts/tg-support search "<query>"` for evidence-heavy questions. Preserve returned source references in answers. If `conflicts` is non-empty, ask the operator which source should guide the answer before resolving the conflict.
 
+For product-behavior, capability, API-behavior, or debugging questions, use `scripts/tg-support repo-evidence "<query>"`. Repository Evidence from the configured branch outranks Manual Knowledge Notes, Telegram evidence, and web evidence. Show any stale checkout warning before relying on repository evidence.
+
 ## Manual Knowledge
 
 When the operator asks to save durable support knowledge, show the parsed note text, effective date, optional expiry date, and caveats before saving. After confirmation, use `scripts/tg-support knowledge-add --text "<note>" --effective-date <YYYY-MM-DD>` with optional `--expires-date` and `--caveats`.

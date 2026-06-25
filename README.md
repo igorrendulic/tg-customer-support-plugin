@@ -77,6 +77,16 @@ scripts/tg-support --profile default setup \
   --seed https://example.com/blog
 ```
 
+Optionally add a GitHub repository and branch for code-grounded behavior or debugging answers. This uses your existing local `git` or `gh` authentication; do not paste GitHub credentials into the support workflow.
+
+```bash
+scripts/tg-support --profile default setup \
+  --chat my-support-chat \
+  --seed https://example.com/blog \
+  --repository owner/project \
+  --repository-branch production
+```
+
 Then build the local corpus:
 
 ```bash
@@ -92,10 +102,13 @@ Ask questions or prepare a reply draft:
 
 ```bash
 scripts/tg-support --profile default search "password reset issues"
+scripts/tg-support --profile default repo-evidence "account transfer api"
 scripts/tg-support --profile default stats active-users
 scripts/tg-support --profile default draft-context --user alice
 scripts/tg-support --profile default draft-create --message-id 123 --text "Thanks, try the reset link here..."
 ```
+
+Repository Evidence is live and branch-specific rather than indexed. Use it for product-behavior, capability, API-behavior, or debugging questions. If the checkout cannot refresh, the CLI returns a stale warning so the agent can tell the operator that cited code may be outdated.
 
 Save dated support knowledge through Codex after reviewing the parsed fields, or directly through the CLI after the operator has confirmed the note:
 
@@ -121,7 +134,7 @@ Local profile data lives outside the source tree by default:
 ~/.tg-support/profiles/<profile>/
 ```
 
-That profile directory contains the profile config, Telegram API credentials, Telegram session file, SQLite database, and rebuildable indexes. Treat it as sensitive local state.
+That profile directory contains the profile config, optional repository checkout state, Telegram API credentials, Telegram session file, SQLite database, and rebuildable indexes. Treat it as sensitive local state.
 
 Set `TG_SUPPORT_HOME` to move profile data elsewhere.
 

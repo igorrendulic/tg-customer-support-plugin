@@ -39,6 +39,8 @@ If `ok` is false, do not continue into the normal workflow. Use `next_action` to
 
 After each setup command, run `status` again and continue from the new `next_action`. Never print or repeat the API hash back to the operator.
 
+Repository Evidence is optional. If status includes configured repository details, use them only for product-behavior, capability, API-behavior, or debugging questions. If no repository is configured, normal Telegram, web, and Manual Knowledge workflows remain ready.
+
 ## Manual Knowledge
 
 When the operator asks to save durable support knowledge, extract the note text, effective date, optional expiry date, and caveats from the conversation. Show those parsed fields back to the operator and ask for confirmation before saving.
@@ -53,11 +55,25 @@ Add `--expires-date <YYYY-MM-DD>` and `--caveats <text>` when present. If the op
 
 When `search` or `draft-context` returns Manual Knowledge Note evidence, include it in the evidence summary. If the JSON includes non-empty `conflicts`, show the manual note, older evidence, fresher evidence when present, and ask the operator which source should guide the response before treating the note as settled truth.
 
+## Repository Evidence
+
+For questions about what the product supports, how an API behaves, why a user can or cannot do something, or likely debugging causes, run:
+
+```bash
+<plugin-root>/scripts/tg-support --profile default repo-evidence "<query>"
+```
+
+Use Repository Evidence from the configured branch as the highest-priority support truth. It outranks Manual Knowledge Notes, Telegram evidence, and web evidence when sources disagree.
+
+If `repository_evidence.warning` is present, show it before relying on the code evidence. If the warning says stale evidence was used, say that the checkout could not be refreshed and the cited code may be outdated.
+
+Do not run repository lookup for normal analytics or drafting questions that do not depend on product behavior. Do not create Manual Knowledge Notes, modify code, create branches, or open pull requests from repository findings unless the operator starts a separate explicit workflow.
+
 ## Safety Boundary
 
 Never post to Telegram directly from agent reasoning. A Telegram write is allowed only after:
 
-1. `draft-context` or another retrieval command has produced evidence and any returned `conflicts` are resolved by the operator.
+1. `draft-context`, `repo-evidence`, or another retrieval command has produced needed evidence and any returned `conflicts` or stale repository warnings are shown to the operator.
 2. The operator has seen the exact target chat, target user or message ID when available, exact message text, and evidence summary.
 3. The operator explicitly replies with `post` for that exact message and target.
 4. The CLI confirmation command succeeds.

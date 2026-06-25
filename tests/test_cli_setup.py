@@ -23,6 +23,58 @@ def test_cli_setup_stores_normalized_config(tmp_path, capsys, monkeypatch):
     assert config.chat == "support"
 
 
+def test_cli_setup_stores_optional_repository_config(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    code = main(
+        [
+            "--profile",
+            "demo",
+            "setup",
+            "--chat",
+            "@support",
+            "--seed",
+            "example.com/blog",
+            "--repository",
+            "owner/project",
+            "--repository-branch",
+            "production",
+        ]
+    )
+    assert code == 0
+    capsys.readouterr()
+    config = load_config(tmp_path / "demo" / "config.json")
+    assert config.repository is not None
+    assert config.repository.repository == "https://github.com/owner/project.git"
+    assert config.repository.branch == "production"
+
+
+def test_status_reports_repository_config_without_blocking_readiness(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    assert (
+        main(
+            [
+                "setup",
+                "--chat",
+                "support",
+                "--seed",
+                "example.com/blog",
+                "--repository",
+                "owner/project",
+                "--repository-branch",
+                "production",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    assert main(["status"]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["features"]["repository_evidence"] is True
+    assert output["repository"] == {"repository": "https://github.com/owner/project.git", "branch": "production"}
+    assert output["next_action"] == "credentials"
+
+
 def test_missing_setup_inputs_fail_without_profile(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
     code = main(["setup", "--chat", "support"])
@@ -225,12 +277,17 @@ def test_openai_agent_exposes_setup_commands():
     assert "credentials:" in agent
     assert "login:" in agent
     assert "knowledge_add:" in agent
+    assert "repo_evidence:" in agent
+    assert "product-behavior" in agent
+    assert "stale checkout warnings" in agent
 
 
 def test_reply_workflow_requires_conflict_resolution():
     workflow = Path("skills/telegram-support/references/reply-workflow.md").read_text()
     assert "conflicts" in workflow
     assert "Manual Knowledge Note" in workflow
+    assert "repo-evidence" in workflow
+    assert "Repository Evidence" in workflow
 
 
 def test_operator_docs_describe_manual_knowledge():
@@ -239,3 +296,16 @@ def test_operator_docs_describe_manual_knowledge():
     assert "knowledge-add" in readme
     assert "Manual Knowledge Notes" in setup
     assert "conflicts" in setup
+
+
+def test_operator_docs_describe_optional_repository_evidence():
+    readme = Path("README.md").read_text()
+    setup = Path("docs/setup.md").read_text()
+    skill = Path("skills/telegram-support/SKILL.md").read_text()
+    claude_usage = Path("docs/claude-usage.md").read_text()
+    assert "repo-evidence" in readme
+    assert "--repository owner/project" in setup
+    assert "stale" in setup
+    assert "Repository Evidence" in skill
+    assert "repo-evidence" in claude_usage
+    assert "product-behavior" in claude_usage
