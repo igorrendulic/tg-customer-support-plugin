@@ -80,7 +80,8 @@ def search_checkout(checkout_path: Path, query: str, limit: int, revision: str |
 
 def _iter_text_files(root: Path):
     for path in root.rglob("*"):
-        if any(part in SKIP_DIRS or part.startswith(".") and part != "." for part in path.relative_to(root).parts[:-1]):
+        parent_parts = path.relative_to(root).parts[:-1]
+        if any(part in SKIP_DIRS or part.startswith(".") for part in parent_parts):
             continue
         if not path.is_file():
             continue

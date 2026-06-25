@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from tg_support.config import config_from_dict
 from tg_support.repository import CommandResult, RepositoryManager
 
