@@ -6,7 +6,34 @@ It is for founders, maintainers, and support engineers who already handle suppor
 
 ## Install
 
-Clone the repo and install the package into a local virtual environment:
+For Codex, add the plugin marketplace and install the plugin:
+
+```bash
+codex plugin marketplace add igorrendulic/tg-customer-support-plugin
+codex plugin add telegram-support-agent@tg-customer-support-plugin
+```
+
+That installs the Codex workflow. The first time the workflow runs the bundled `scripts/tg-support` helper, it creates its own runtime environment, installs the Telegram and browser-rendering dependencies, and installs Chromium for Playwright.
+
+To run the CLI directly outside Codex:
+
+```bash
+git clone https://github.com/igorrendulic/tg-customer-support-plugin.git
+cd tg-customer-support-plugin
+scripts/tg-support --help
+```
+
+By default, the auto-created environment lives under `~/.local/share/tg-support/runtime/.venv`. Set `TG_SUPPORT_VENV` to put it somewhere else.
+
+The package also exposes a `tg-support` console script inside that auto-created environment:
+
+```bash
+~/.local/share/tg-support/runtime/.venv/bin/tg-support --help
+```
+
+### Development Install
+
+For local development, clone the repo and install the package with dev dependencies:
 
 ```bash
 git clone <repo-url>
@@ -15,28 +42,10 @@ python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 ```
 
-Install optional adapters when you need real Telegram access or browser-rendered crawling:
+Add optional adapters when you need them:
 
 ```bash
 .venv/bin/pip install -e ".[telegram,render,dev]"
-```
-
-If you install the `render` extra, install the Playwright browser runtime too:
-
-```bash
-.venv/bin/playwright install
-```
-
-The package exposes a `tg-support` console script:
-
-```bash
-.venv/bin/tg-support --help
-```
-
-The checked-in helper is equivalent when your active Python environment has the package installed:
-
-```bash
-scripts/tg-support --help
 ```
 
 ## Use

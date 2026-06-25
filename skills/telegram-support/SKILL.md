@@ -9,11 +9,13 @@ Use this skill when the operator asks about a configured Telegram support chat, 
 
 ## CLI
 
-Run commands through the local helper:
+Run commands through the bundled local helper. Resolve the helper relative to this skill's plugin root; from this file that is `../../scripts/tg-support`. If the operator is developing from a source checkout, `scripts/tg-support` from the repo root is equivalent.
 
 ```bash
-scripts/tg-support --profile default <command>
+<plugin-root>/scripts/tg-support --profile default <command>
 ```
+
+The first run bootstraps the Python runtime under the operator's local data directory unless `TG_SUPPORT_VENV` overrides it.
 
 The CLI prints JSON. Treat that JSON as the source of truth for local corpus state, evidence, draft IDs, and confirmation tokens.
 
