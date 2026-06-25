@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from tg_support.repository import RepositoryManager
 
 
 SKIP_DIRS = {".git", ".hg", ".svn", "__pycache__", "node_modules", ".venv", "dist", "build"}
+STOPWORDS = {"a", "an", "as", "at", "be", "by", "in", "is", "it", "of", "on", "or", "to"}
 TEXT_EXTENSIONS = {
     ".go",
     ".js",
@@ -45,7 +47,7 @@ def repository_evidence(manager: RepositoryManager, query: str, limit: int = 6) 
 
 
 def search_checkout(checkout_path: Path, query: str, limit: int, revision: str | None, branch: str | None) -> list[dict]:
-    terms = [term.lower() for term in query.split() if len(term) > 2]
+    terms = _search_terms(query)
     if not terms:
         return []
     matches = []
@@ -78,12 +80,26 @@ def search_checkout(checkout_path: Path, query: str, limit: int, revision: str |
     return sorted(matches, key=lambda item: (-item["score"], item["path"]))[:limit]
 
 
+def _search_terms(query: str) -> list[str]:
+    terms = []
+    for token in re.findall(r"[A-Za-z0-9_]+", query):
+        term = token.lower()
+        if len(term) > 2 or term not in STOPWORDS:
+            terms.append(term)
+    return terms
+
+
 def _iter_text_files(root: Path):
+    resolved_root = root.resolve()
     for path in root.rglob("*"):
         parent_parts = path.relative_to(root).parts[:-1]
         if any(part in SKIP_DIRS or part.startswith(".") for part in parent_parts):
             continue
-        if not path.is_file():
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            path.resolve().relative_to(resolved_root)
+        except ValueError:
             continue
         if path.name.startswith(".") or path.suffix.lower() not in TEXT_EXTENSIONS:
             continue

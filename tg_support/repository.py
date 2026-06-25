@@ -33,7 +33,10 @@ class CheckoutState:
 
 class GitRunner:
     def run(self, args: list[str], cwd: Path | None = None) -> CommandResult:
-        completed = subprocess.run(args, cwd=cwd, text=True, capture_output=True, check=False)
+        try:
+            completed = subprocess.run(args, cwd=cwd, text=True, capture_output=True, check=False)
+        except OSError as exc:
+            return CommandResult(1, "", str(exc))
         return CommandResult(completed.returncode, completed.stdout.strip(), completed.stderr.strip())
 
 
@@ -52,7 +55,10 @@ class RepositoryManager:
             return CheckoutState(configured=False, available=False, warning="repository_not_configured")
         repo = self.config.repository
         checkout = self.checkout_dir(repo)
-        ensure_private_directory(checkout.parent)
+        try:
+            ensure_private_directory(checkout.parent)
+        except OSError as exc:
+            return CheckoutState(configured=True, available=False, checkout_path=checkout, branch=repo.branch, error=str(exc))
         if not (checkout / ".git").exists():
             clone = self.runner.run(["git", "clone", "--branch", repo.branch, "--single-branch", repo.repository, str(checkout)])
             if clone.returncode != 0:
@@ -66,6 +72,10 @@ class RepositoryManager:
             return self._state(checkout, repo.branch)
 
         state = self._state(checkout, repo.branch)
+        if not state.available:
+            refresh = self._refresh(checkout, repo.branch)
+            if refresh.returncode == 0:
+                state = self._state(checkout, repo.branch)
         if not state.available:
             return state
         remote_revision = self._remote_revision(repo)
@@ -110,6 +120,19 @@ class RepositoryManager:
         revision = self.runner.run(["git", "-C", str(checkout), "rev-parse", "HEAD"])
         if revision.returncode != 0:
             return CheckoutState(configured=True, available=False, checkout_path=checkout, branch=branch, error=revision.stderr)
+        status = self.runner.run(["git", "-C", str(checkout), "status", "--porcelain"])
+        if status.returncode != 0:
+            return CheckoutState(configured=True, available=False, checkout_path=checkout, branch=branch, error=status.stderr)
+        if status.stdout:
+            return CheckoutState(
+                configured=True,
+                available=True,
+                checkout_path=checkout,
+                branch=branch,
+                revision=revision.stdout,
+                stale=True,
+                warning="dirty_checkout: local checkout has uncommitted changes",
+            )
         return CheckoutState(configured=True, available=True, checkout_path=checkout, branch=branch, revision=revision.stdout)
 
     def _remote_revision(self, repo: RepositoryConfig) -> str | None:

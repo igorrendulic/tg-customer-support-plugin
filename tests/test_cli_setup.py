@@ -278,6 +278,8 @@ def test_openai_agent_exposes_setup_commands():
     assert "login:" in agent
     assert "knowledge_add:" in agent
     assert "repo_evidence:" in agent
+    assert "product-behavior" in agent
+    assert "stale checkout warnings" in agent
 
 
 def test_reply_workflow_requires_conflict_resolution():
@@ -300,7 +302,10 @@ def test_operator_docs_describe_optional_repository_evidence():
     readme = Path("README.md").read_text()
     setup = Path("docs/setup.md").read_text()
     skill = Path("skills/telegram-support/SKILL.md").read_text()
+    claude_usage = Path("docs/claude-usage.md").read_text()
     assert "repo-evidence" in readme
     assert "--repository owner/project" in setup
     assert "stale" in setup
     assert "Repository Evidence" in skill
+    assert "repo-evidence" in claude_usage
+    assert "product-behavior" in claude_usage

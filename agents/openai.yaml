@@ -12,4 +12,5 @@ commands:
   repo_evidence: "scripts/tg-support repo-evidence '<query>'"
   knowledge_add: "scripts/tg-support knowledge-add --text '<note>' --effective-date <YYYY-MM-DD>"
   stats: "scripts/tg-support stats <kind>"
+repository_evidence_policy: "Use repo_evidence only for product-behavior, capability, API-behavior, or debugging questions. Repository Evidence from the configured branch outranks Manual Knowledge Notes, Telegram evidence, and web evidence; show stale checkout warnings before relying on it."
 posting_policy: "Show target, exact message, evidence, repository stale warnings, and any conflicts; require explicit post/cancel confirmation before running confirm."

@@ -276,7 +276,23 @@ def command_draft_context(args: argparse.Namespace) -> int:
 
 
 def command_repo_evidence(args: argparse.Namespace) -> int:
-    config = config_for_args(args)
+    config, error = load_config_for_status(args)
+    if config is None:
+        return emit(
+            {
+                "ok": True,
+                "repository_evidence": {
+                    "configured": False,
+                    "available": False,
+                    "stale": False,
+                    "warning": error,
+                    "error": error,
+                    "branch": None,
+                    "revision": None,
+                    "evidence": [],
+                },
+            }
+        )
     evidence = repository_evidence(RepositoryManager(config), args.query, limit=args.limit)
     return emit({"ok": True, "repository_evidence": evidence})
 
