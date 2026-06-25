@@ -1,5 +1,7 @@
 # Reply Workflow
 
+Run `status` first. If the profile is not ready, follow the setup preflight in `../SKILL.md` instead of drafting from an incomplete corpus.
+
 1. Ask for the target username or Telegram message ID if neither is provided.
 2. Run `scripts/tg-support draft-context --user <username>` or `scripts/tg-support draft-context --message-id <id>`.
 3. Draft the reply in natural language using the returned `history`, `thread`, and `evidence`.

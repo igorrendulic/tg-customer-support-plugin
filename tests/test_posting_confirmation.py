@@ -4,6 +4,7 @@ import pytest
 
 from tg_support.support.drafting import create_draft
 from tg_support.support.posting import PostingError, apply_confirmation
+from tg_support.telegram_client import TelegramError
 
 
 class SendGateway:
@@ -22,6 +23,11 @@ class SendGateway:
     def send_reply(self, chat, text, reply_to_message_id):
         self.calls.append((chat, text, reply_to_message_id))
         return {"message_id": 500}
+
+
+class FailingGateway:
+    def send_reply(self, *_args):
+        raise TelegramError("telegram unavailable")
 
 
 def test_cancelled_draft_does_not_send(db):
@@ -57,3 +63,14 @@ def test_missing_gateway_does_not_consume_post_token(db):
     gateway = SendGateway()
     result = apply_confirmation(db, draft["post_token"], gateway)
     assert result["status"] == "posted"
+
+
+def test_failed_gateway_send_does_not_consume_post_token(db):
+    draft = create_draft(db, "support", "hello", {}, target_message_id=10)
+    with pytest.raises(TelegramError):
+        apply_confirmation(db, draft["post_token"], FailingGateway())
+
+    gateway = SendGateway()
+    result = apply_confirmation(db, draft["post_token"], gateway)
+    assert result["status"] == "posted"
+    assert gateway.calls == [("support", "hello", 10)]

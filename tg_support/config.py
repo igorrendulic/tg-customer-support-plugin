@@ -43,6 +43,20 @@ class SupportConfig:
     def session_path(self) -> Path:
         return self.profile_dir / "telegram.session"
 
+    @property
+    def credentials_path(self) -> Path:
+        return self.profile_dir / "telegram_credentials.json"
+
+    @property
+    def authorization_path(self) -> Path:
+        return self.profile_dir / "telegram_authorized.json"
+
+
+@dataclass(frozen=True)
+class TelegramCredentials:
+    api_id: int
+    api_hash: str
+
 
 def normalize_chat_identifier(value: str) -> str:
     raw = value.strip()
@@ -74,6 +88,14 @@ def profile_dir(profile: str = DEFAULT_PROFILE, base_dir: Path | None = None) ->
     base = base_dir or DEFAULT_BASE_DIR
     safe_profile = re.sub(r"[^A-Za-z0-9_.-]+", "-", profile).strip("-") or DEFAULT_PROFILE
     return base / "profiles" / safe_profile
+
+
+def ensure_private_directory(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        path.chmod(0o700)
+    except OSError:
+        pass
 
 
 def load_config(path: Path) -> SupportConfig:
@@ -108,7 +130,7 @@ def config_from_dict(data: dict[str, Any], profile_dir_override: Path | None = N
 
 
 def write_config(config: SupportConfig) -> Path:
-    config.profile_dir.mkdir(parents=True, exist_ok=True)
+    ensure_private_directory(config.profile_dir)
     path = config.profile_dir / "config.json"
     payload = {
         "profile": config.profile,
@@ -120,3 +142,57 @@ def write_config(config: SupportConfig) -> Path:
     }
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     return path
+
+
+def credentials_from_dict(data: dict[str, Any]) -> TelegramCredentials:
+    try:
+        api_id = int(data.get("api_id", ""))
+    except (TypeError, ValueError) as exc:
+        raise ConfigError("Telegram API ID must be an integer.") from exc
+    raw_api_hash = data.get("api_hash", "")
+    if raw_api_hash is None:
+        raw_api_hash = ""
+    api_hash = str(raw_api_hash).strip()
+    if api_id <= 0:
+        raise ConfigError("Telegram API ID must be a positive integer.")
+    if not api_hash:
+        raise ConfigError("Telegram API hash is required.")
+    return TelegramCredentials(api_id=api_id, api_hash=api_hash)
+
+
+def load_telegram_credentials(path: Path) -> TelegramCredentials:
+    return credentials_from_dict(json.loads(path.read_text()))
+
+
+def write_telegram_credentials(config: SupportConfig, credentials: TelegramCredentials) -> Path:
+    ensure_private_directory(config.profile_dir)
+    path = config.credentials_path
+    payload = json.dumps({"api_id": credentials.api_id, "api_hash": credentials.api_hash}, indent=2, sort_keys=True) + "\n"
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as file:
+        file.write(payload)
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+    return path
+
+
+def write_telegram_authorization(config: SupportConfig) -> Path:
+    ensure_private_directory(config.profile_dir)
+    path = config.authorization_path
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as file:
+        file.write(json.dumps({"authorized": True}, indent=2, sort_keys=True) + "\n")
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+    return path
+
+
+def clear_telegram_authorization(config: SupportConfig) -> None:
+    try:
+        config.authorization_path.unlink()
+    except FileNotFoundError:
+        pass

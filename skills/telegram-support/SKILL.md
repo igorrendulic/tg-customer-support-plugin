@@ -19,6 +19,26 @@ The first run bootstraps the Python runtime under the operator's local data dire
 
 The CLI prints JSON. Treat that JSON as the source of truth for local corpus state, evidence, draft IDs, and confirmation tokens.
 
+## Setup Preflight
+
+Before answering analytics questions, searching, drafting, or posting, run:
+
+```bash
+<plugin-root>/scripts/tg-support --profile default status
+```
+
+If `ok` is false, do not continue into the normal workflow. Use `next_action` to guide the operator through the missing setup step:
+
+- `setup`: ask for a Telegram chat identifier and at least one website or blog seed, then run `setup`.
+- `credentials`: explain that Telegram API ID and API hash are needed from `https://my.telegram.org`, then run `credentials --api-id <id> --api-hash-stdin` and provide the hash on stdin after the operator provides it.
+- `login`: run `login` so the operator can complete the local Telethon user-session login.
+- `sync`: run `sync` to pull Telegram history.
+- `crawl`: run `crawl` to fetch configured website or blog resources.
+- `index`: run `index` to build the local retrieval index.
+- `ready`: proceed with the requested support workflow.
+
+After each setup command, run `status` again and continue from the new `next_action`. Never print or repeat the API hash back to the operator.
+
 ## Safety Boundary
 
 Never post to Telegram directly from agent reasoning. A Telegram write is allowed only after:
