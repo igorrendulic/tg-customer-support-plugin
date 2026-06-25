@@ -2,8 +2,8 @@
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-TG_SUPPORT_DATA_HOME="${TG_SUPPORT_HOME:-"${XDG_DATA_HOME:-"$HOME/.local/share"}/tg-support"}"
-VENV="${TG_SUPPORT_VENV:-"$TG_SUPPORT_DATA_HOME/runtime/.venv"}"
+TG_SUPPORT_DATA_HOME="${TG_SUPPORT_HOME:-"$HOME/.tg-support"}"
+VENV="${TG_SUPPORT_VENV:-"$TG_SUPPORT_DATA_HOME/.venv"}"
 PYTHON="$VENV/bin/python"
 BOOTSTRAP_MARKER="$VENV/.tg-support-bootstrap-v1"
 

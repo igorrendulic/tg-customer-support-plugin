@@ -23,12 +23,12 @@ cd tg-customer-support-plugin
 scripts/tg-support --help
 ```
 
-By default, the auto-created environment lives under `~/.local/share/tg-support/runtime/.venv`. Set `TG_SUPPORT_VENV` to put it somewhere else.
+By default, the auto-created environment lives under `~/.tg-support/.venv`. Set `TG_SUPPORT_VENV` to put it somewhere else.
 
 The package also exposes a `tg-support` console script inside that auto-created environment:
 
 ```bash
-~/.local/share/tg-support/runtime/.venv/bin/tg-support --help
+~/.tg-support/.venv/bin/tg-support --help
 ```
 
 ### Development Install
@@ -85,7 +85,7 @@ scripts/tg-support --profile default confirm <post_or_cancel_token>
 Local profile data lives outside the source tree by default:
 
 ```text
-~/.local/share/tg-support/profiles/<profile>/
+~/.tg-support/profiles/<profile>/
 ```
 
 Set `TG_SUPPORT_HOME` to move profile data elsewhere.
