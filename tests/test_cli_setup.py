@@ -13,7 +13,13 @@ from tg_support.storage.db import SupportDatabase
 from tg_support.support.drafting import create_draft
 from tg_support.support.context import draft_context
 from tg_support.telegram_client import TelegramError
-from tests.conftest import make_test_retriever, patch_test_retriever, seed_messages, seed_username_search_messages
+from tests.conftest import (
+    make_test_retriever,
+    patch_test_retriever,
+    seed_display_name_author_messages,
+    seed_messages,
+    seed_username_search_messages,
+)
 
 
 def test_cli_setup_stores_normalized_config(tmp_path, capsys, monkeypatch):
@@ -313,6 +319,26 @@ def test_search_boosts_exact_username_author_matches(tmp_path, capsys, monkeypat
     assert output["results"][0]["document_id"]
 
 
+def test_search_cli_boosts_display_name_author_matches(tmp_path, capsys, monkeypatch):
+    patch_test_retriever(monkeypatch)
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    assert main(["setup", "--chat", "support"]) == 0
+    config = load_config(tmp_path / "default" / "config.json")
+    db = SupportDatabase(config.db_path)
+    seed_display_name_author_messages(db)
+    chunk_messages(db, window=0)
+    make_test_retriever(db).build()
+    capsys.readouterr()
+
+    assert main(["search", "@crinx7"]) == 0
+    output = json.loads(capsys.readouterr().out)
+
+    assert output["ok"] is True
+    assert output["results"][0]["source_type"] == "telegram"
+    assert output["results"][0]["metadata"]["author"] == "crinx7"
+    assert "email already exist" in output["results"][0]["text"]
+
+
 def test_draft_context_reports_retrieval_dependency_errors(tmp_path, capsys, monkeypatch):
     class FailingRetriever:
         def __init__(self, _db, *args, **kwargs):
@@ -454,6 +480,96 @@ def test_draft_context_for_known_user(db, monkeypatch):
     assert context["evidence_sufficiency"]["fallback_recommended"] is False
 
 
+def test_draft_context_for_display_name_only_user(db, monkeypatch):
+    patch_test_retriever(monkeypatch)
+    seed_display_name_author_messages(db)
+    chunk_messages(db, window=0)
+    make_test_retriever(db).build()
+
+    context = draft_context(db, "email already exist", username="crinx7")
+
+    assert context["history"]
+    assert context["history"][0]["author_label"] == "crinx7"
+    assert context["target"]["username"] == "crinx7"
+    assert context["suggestion"] is None
+    assert "missing_user_history" not in {reason["code"] for reason in context["evidence_sufficiency"]["reasons"]}
+
+
+def test_draft_context_exposes_target_language_from_user_history(db, monkeypatch):
+    patch_test_retriever(monkeypatch)
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "yonghengyige",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "刚申请一个邮箱",
+        },
+    )
+    chunk_messages(db, window=0)
+    make_test_retriever(db).build()
+
+    context = draft_context(db, "mailbox", username="yonghengyige")
+
+    assert context["target"]["language"] == "zh"
+    assert context["history"][0]["source_language"] == "zh"
+
+
+def test_draft_context_exposes_target_language_from_message_context(db, monkeypatch):
+    patch_test_retriever(monkeypatch)
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "yonghengyige",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "刚申请一个邮箱",
+        },
+    )
+    chunk_messages(db, window=0)
+    make_test_retriever(db).build()
+
+    context = draft_context(db, "", message_id=1)
+
+    assert context["target"]["language"] == "zh"
+    assert context["thread"][0]["source_language"] == "zh"
+
+
+def test_draft_context_prefers_target_message_language_over_neighbors(db, monkeypatch):
+    patch_test_retriever(monkeypatch)
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "yonghengyige",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "刚申请一个邮箱",
+        },
+    )
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 2,
+            "author_id": 11,
+            "author_username": "crinx7",
+            "sent_at": "2026-06-01T12:01:00Z",
+            "text": "It says email already exist",
+        },
+    )
+    chunk_messages(db, window=0)
+    make_test_retriever(db).build()
+
+    context = draft_context(db, "", message_id=2)
+
+    assert context["target"]["language"] == "en"
+
+
 def test_draft_context_reports_no_evidence_sufficiency_gap(db, monkeypatch):
     patch_test_retriever(monkeypatch)
 
@@ -513,6 +629,8 @@ def test_skill_documents_status_preflight():
     assert "evidence_sufficiency" in skill
     assert "DM follow-up" in skill
     assert "Do not save the DM follow-up wording as Manual Knowledge" in skill
+    assert "target.language" in skill
+    assert "translated_text" in skill
 
 
 def test_openai_agent_exposes_setup_commands():
@@ -527,6 +645,9 @@ def test_openai_agent_exposes_setup_commands():
     assert "evidence_sufficiency" in agent
     assert "direct_answer_supported" in agent
     assert "DM follow-up" in agent
+    assert "reply_language_policy" in agent
+    assert "target.language" in agent
+    assert "translated_text" in agent
 
 
 def test_reply_workflow_requires_conflict_resolution():
@@ -539,6 +660,8 @@ def test_reply_workflow_requires_conflict_resolution():
     assert "direct_answer_supported" in workflow
     assert "cautious evidence-limited answer" in workflow
     assert "DM follow-up" in workflow
+    assert "target.language" in workflow
+    assert "translated_text" in workflow
 
 
 def test_claude_agent_describes_evidence_sufficiency_fallback():
@@ -547,6 +670,8 @@ def test_claude_agent_describes_evidence_sufficiency_fallback():
     assert "direct_answer_supported" in agent
     assert "DM follow-up" in agent
     assert "Manual Knowledge" in agent
+    assert "target.language" in agent
+    assert "translated_text" in agent
 
 
 def test_operator_docs_describe_manual_knowledge():
@@ -559,6 +684,8 @@ def test_operator_docs_describe_manual_knowledge():
     assert "DM follow-up wording is not Manual Knowledge" in readme
     assert "Evidence Sufficiency And Reply Fallbacks" in setup
     assert "Fallback Draft Option" in setup
+    assert "target.language" in setup
+    assert "translated_text" in setup
 
 
 def test_operator_docs_describe_optional_repository_evidence():

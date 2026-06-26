@@ -14,4 +14,5 @@ commands:
   stats: "scripts/tg-support stats <kind>"
 repository_evidence_policy: "Use repo_evidence only for product-behavior, capability, API-behavior, or debugging questions. Repository Evidence from the configured branch outranks Manual Knowledge Notes, Telegram evidence, and web evidence; show stale checkout warnings before relying on it."
 draft_fallback_policy: "When draft-context returns evidence_sufficiency, show the state and reasons. If direct_answer_supported is false, or repository evidence has a stale warning, offer both a cautious evidence-limited answer and a DM follow-up for missing support-blocking details; create only the operator-selected draft."
+reply_language_policy: "When draft-context returns target.language, draft in that language unless the operator asks otherwise. Treat translated_text as helper context for understanding evidence, not as support truth and not as a reason to answer in English."
 posting_policy: "Show target, exact message, evidence, evidence sufficiency, repository stale warnings, and any conflicts; require explicit post/cancel confirmation before running confirm."

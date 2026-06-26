@@ -389,7 +389,10 @@ class SupportDatabase:
                     """,
                     payload,
                 )
-                conn.executemany("INSERT INTO fts_documents(rowid, text) VALUES (?, ?)", [(row[0], row[5]) for row in payload])
+                conn.executemany(
+                    "INSERT INTO fts_documents(rowid, text) VALUES (?, ?)",
+                    [(row[0], self._fts_text(row[5], row[6])) for row in payload],
+                )
         return self.documents()
 
     def documents(self) -> list[DocumentRecord]:
@@ -407,19 +410,48 @@ class SupportDatabase:
         return {row["id"]: self._document_from_row(row) for row in rows}
 
     def telegram_documents_by_author_username(self, username: str) -> list[DocumentRecord]:
+        normalized = username.lstrip("@").casefold()
         with self.connect() as conn:
             rows = conn.execute(
                 """
                 SELECT d.*
                 FROM documents d
                 JOIN messages m ON m.id = d.source_id
+                LEFT JOIN users u ON u.id = m.author_id
                 WHERE d.source_type = 'telegram'
-                  AND lower(m.author_username) = ?
+                  AND (
+                    lower(m.author_username) = ?
+                    OR (NULLIF(m.author_username, '') IS NULL AND lower(u.display_name) = ?)
+                  )
                 ORDER BY m.sent_at DESC, d.id ASC
                 """,
-                (username.casefold(),),
+                (normalized, normalized),
             ).fetchall()
         return [self._document_from_row(row) for row in rows]
+
+    def telegram_message_author_rows(self) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                  m.id,
+                  m.chat_id,
+                  m.telegram_message_id,
+                  m.author_id,
+                  m.author_username,
+                  u.display_name AS author_display_name,
+                  COALESCE(NULLIF(m.author_username, ''), NULLIF(u.display_name, ''), 'unknown') AS author_label,
+                  m.sent_at,
+                  m.text,
+                  m.reply_to_message_id,
+                  c.input AS chat
+                FROM messages m
+                JOIN chats c ON c.id = m.chat_id
+                LEFT JOIN users u ON u.id = m.author_id
+                ORDER BY m.chat_id, m.telegram_message_id
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def search_fts(self, query: str, limit: int) -> list[tuple[DocumentRecord, float]]:
         if not query:
@@ -477,3 +509,13 @@ class SupportDatabase:
             )
             digest.update(b"\n")
         return digest.hexdigest()
+
+    def _fts_text(self, text: str, metadata_json: str) -> str:
+        try:
+            metadata = json.loads(metadata_json)
+        except json.JSONDecodeError:
+            metadata = {}
+        translated = metadata.get("translated_text")
+        if isinstance(translated, str) and translated.strip():
+            return f"{text}\n{translated}"
+        return text

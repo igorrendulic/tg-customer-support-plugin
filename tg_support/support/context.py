@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from tg_support.indexing.chunking import infer_language
 from tg_support.indexing.hybrid import HybridRetriever
 from tg_support.storage.db import SupportDatabase
 
@@ -67,18 +68,27 @@ MISSING_DETAIL_PATTERNS = (
 
 
 def user_history(db: SupportDatabase, username: str, limit: int = 5) -> list[dict]:
-    normalized = username.lstrip("@")
+    normalized = username.lstrip("@").casefold()
     with db.connect() as conn:
         rows = conn.execute(
             """
-            SELECT telegram_message_id, author_username, sent_at, text, reply_to_message_id
-            FROM messages
-            WHERE author_username = ?
+            SELECT
+              m.telegram_message_id,
+              m.author_username,
+              u.display_name AS author_display_name,
+              COALESCE(NULLIF(m.author_username, ''), NULLIF(u.display_name, ''), 'unknown') AS author_label,
+              m.sent_at,
+              m.text,
+              m.reply_to_message_id
+            FROM messages m
+            LEFT JOIN users u ON u.id = m.author_id
+            WHERE lower(m.author_username) = ?
+               OR (NULLIF(m.author_username, '') IS NULL AND lower(u.display_name) = ?)
             ORDER BY sent_at DESC LIMIT ?
             """,
-            (normalized, limit),
+            (normalized, normalized, limit),
         ).fetchall()
-    return [dict(row) for row in rows]
+    return annotate_message_rows([dict(row) for row in rows])
 
 
 def message_context(db: SupportDatabase, message_id: int, window: int = 3) -> list[dict]:
@@ -88,14 +98,46 @@ def message_context(db: SupportDatabase, message_id: int, window: int = 3) -> li
             return []
         rows = conn.execute(
             """
-            SELECT telegram_message_id, author_username, sent_at, text, reply_to_message_id
-            FROM messages
-            WHERE chat_id = ? AND telegram_message_id BETWEEN ? AND ?
+            SELECT
+              m.telegram_message_id,
+              m.author_username,
+              u.display_name AS author_display_name,
+              COALESCE(NULLIF(m.author_username, ''), NULLIF(u.display_name, ''), 'unknown') AS author_label,
+              m.sent_at,
+              m.text,
+              m.reply_to_message_id
+            FROM messages m
+            LEFT JOIN users u ON u.id = m.author_id
+            WHERE m.chat_id = ? AND m.telegram_message_id BETWEEN ? AND ?
             ORDER BY telegram_message_id
             """,
             (target["chat_id"], target["telegram_message_id"] - window, target["telegram_message_id"] + window),
         ).fetchall()
-    return [dict(row) for row in rows]
+    return annotate_message_rows([dict(row) for row in rows])
+
+
+def annotate_message_rows(rows: list[dict]) -> list[dict]:
+    for row in rows:
+        language = infer_language(row.get("text") or "")
+        if language is not None:
+            row["source_language"] = language
+    return rows
+
+
+def target_language(history: list[dict], thread: list[dict], message_id: int | None = None) -> str | None:
+    if message_id is not None:
+        for item in thread:
+            if item.get("telegram_message_id") == message_id and item.get("source_language"):
+                return item["source_language"]
+    for item in [*history, *thread]:
+        language = item.get("source_language")
+        if language and language != "en":
+            return language
+    for item in [*history, *thread]:
+        language = item.get("source_language")
+        if language:
+            return language
+    return None
 
 
 def content_words(text: str) -> set[str]:
@@ -210,8 +252,9 @@ def draft_context(
         thread,
         username,
     )
+    language = target_language(target_history, thread, message_id)
     return {
-        "target": {"username": username, "message_id": message_id},
+        "target": {"username": username, "message_id": message_id, "language": language},
         "history": target_history,
         "thread": thread,
         "evidence": search["evidence"],

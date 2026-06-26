@@ -102,6 +102,43 @@ def seed_username_search_messages(db):
     return chat_id
 
 
+def seed_display_name_author_messages(db):
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "helper",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "crinx7 asked about recovery keys in another thread",
+        },
+    )
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 2,
+            "author_id": 11,
+            "author_username": None,
+            "author_name": "crinx7",
+            "sent_at": "2026-06-01T12:01:00Z",
+            "text": "It says email already exist",
+        },
+    )
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 3,
+            "author_id": 12,
+            "author_username": None,
+            "author_name": None,
+            "sent_at": "2026-06-01T12:02:00Z",
+            "text": "Anonymous follow up",
+        },
+    )
+    return chat_id
+
+
 def make_test_retriever(db: SupportDatabase) -> HybridRetriever:
     return HybridRetriever(db, embedding_model=FakeEmbeddingModel(), vector_store=EmptyVectorStore())
 
