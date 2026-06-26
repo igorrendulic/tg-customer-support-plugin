@@ -19,8 +19,11 @@ Search Telegram support history, local docs, and repo evidence. Draft a reply. P
 
 <!-- ![Demo](docs/assets/tg_support_demo.gif) -->
 <p align="center">
-  <img src="./docs/assets/tg_support_demo.gif" alt="Demo" width="600">
+  <img src="./docs/assets/tg_support_demo.gif" alt="Demo" width="920">
+  <sub>Clipped with <a href="https://github.com/igorrendulic/codex-clip-idle">codex-clip-idle</a>.</sub>
 </p>
+
+
 
 ## Who this is for
 
