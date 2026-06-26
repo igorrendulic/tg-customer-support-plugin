@@ -1,5 +1,11 @@
 # Telegram Support Agent
 
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![License](https://img.shields.io/github/license/igorrendulic/tg-customer-support-plugin)](LICENSE)
+[![Local First](https://img.shields.io/badge/local--first-yes-brightgreen)](#why-this-shape)
+[![Codex Plugin](https://img.shields.io/badge/Codex-plugin-black)](#codex-and-claude)
+[![Claude Compatible](https://img.shields.io/badge/Claude-compatible-black)](#codex-and-claude)
+
 Telegram Support Agent is a local-first Codex plugin and Python CLI for a single support operator who answers questions in a Telegram support chat. It indexes a configured Telegram chat plus website or blog resources, answers support analytics questions, prepares evidence-backed reply drafts, and posts to Telegram only after explicit operator confirmation.
 
 It is for founders, maintainers, and support engineers who already handle support in Telegram and want searchable local context without moving support data into a hosted helpdesk. The agent surfaces stay thin: Codex and Claude workflows call the same local CLI, while Telegram sessions, SQLite metadata, retrieval indexes, drafts, and confirmation records stay on the operator's machine.
