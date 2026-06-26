@@ -403,5 +403,7 @@ def test_operator_docs_describe_optional_repository_evidence():
     assert "--repository owner/project" in setup
     assert "stale" in setup
     assert "Repository Evidence" in skill
+    assert "skip repository setup" in skill
+    assert "--repository <owner/repo-or-url-or-path>" in skill
     assert "repo-evidence" in claude_usage
     assert "product-behavior" in claude_usage
