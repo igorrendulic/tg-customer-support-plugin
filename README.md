@@ -6,9 +6,44 @@
 [![Codex Plugin](https://img.shields.io/badge/Codex-plugin-black)](#codex-and-claude)
 [![Claude Compatible](https://img.shields.io/badge/Claude-compatible-black)](#codex-and-claude)
 
-Telegram Support Agent is a local-first Codex plugin and Python CLI for a single support operator who answers questions in a Telegram support chat. It indexes a configured Telegram chat plus website or blog resources, answers support analytics questions, prepares evidence-backed reply drafts, and posts to Telegram only after explicit operator confirmation.
 
-It is for founders, maintainers, and support engineers who already handle support in Telegram and want searchable local context without moving support data into a hosted helpdesk. The agent surfaces stay thin: Codex and Claude workflows call the same local CLI, while Telegram sessions, SQLite metadata, retrieval indexes, drafts, and confirmation records stay on the operator's machine.
+A local-first support agent for founders and maintainers who answer users in Telegram.
+
+It lets Codex or Claude search your Telegram support history, website/docs, manual support notes, and optional repo evidence. It can answer support analytics questions and draft evidence-backed replies, but it only posts to Telegram after explicit operator confirmation.
+
+**No hosted helpdesk. No SaaS support inbox. Telegram sessions, SQLite metadata, retrieval indexes, drafts, and confirmation records stay on your machine.**
+
+## Demo
+
+Search Telegram support history, local docs, and repo evidence. Draft a reply. Post only after explicit confirmation.
+
+https://github.com/user-attachments/assets/<uploaded-demo-video-id>
+
+## Who this is for
+
+This is for people who already run support inside Telegram:
+- solo founders answering users directly
+- maintainers of developer tools
+- small SaaS teams without a hosted helpdesk
+- support engineers who need local searchable context
+- projects where support data should stay on the operator's machine
+
+## What it does
+
+- Syncs a configured Telegram support chat into a local profile.
+- Crawls website/blog/docs seeds for support knowledge.
+- Builds local hybrid search with SQLite FTS5 + sqlite-vec.
+- Uses local embeddings for semantic retrieval.
+- Searches live repository evidence for product/API/debugging questions.
+- Creates evidence-backed reply drafts.
+- Requires explicit confirmation before posting to Telegram.
+- Works from Codex, Claude, or the `tg-support` CLI.
+
+## Not a Telegram bot
+
+This project is not designed to autonomously answer users.
+
+It is an operator-assist workflow: the agent can search, summarize, and draft replies, but posting requires an explicit confirmation. This keeps the risky action — writing to Telegram — behind a deterministic local CLI boundary.
 
 ## Install
 
@@ -19,10 +54,12 @@ codex plugin marketplace add igorrendulic/tg-customer-support-plugin
 codex plugin add telegram-support-agent@tg-customer-support-plugin
 ```
 
-That installs the Codex workflow. After that, open Codex in the workspace where you want to use the support agent and ask it to use the `telegram-support` skill, for example:
+## Quickstart
+
+After install, open Codex in the workspace where you want to use the support agent and ask it to use the `telegram-support` skill, for example:
 
 ```text
-Use the telegram-support skill to set up profile default for @my-support-chat with seed https://example.com/blog.
+Use the telegram-support skill to set up profile default for @my-support-chat with seed https://example.com.
 ```
 
 The first time the workflow runs the bundled `scripts/tg-support` helper, it creates its own runtime environment, installs the Telegram, browser-rendering, and retrieval dependencies, and installs Chromium for Playwright. Retrieval uses SQLite FTS5, sqlite-vec, and local `BAAI/bge-small-en-v1.5` embeddings. The first index build may need to download or load the BGE Small model through `sentence-transformers`; after that, search runs against the local profile index.
@@ -157,6 +194,29 @@ That profile directory contains the profile config, optional repository checkout
 Set `TG_SUPPORT_HOME` to move profile data elsewhere.
 
 Existing local profiles created with an older embedding model must be recreated or edited before use. The CLI intentionally rejects unsupported `embedding_model` values instead of mixing incompatible vector dimensions in the same profile.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    TG[Telegram Support Chat] --> SYNC[tg-support sync]
+    WEB[Website / Blog / Docs] --> CRAWL[tg-support crawl]
+    NOTES[Manual Knowledge Notes] --> DB[(SQLite Profile DB)]
+    SYNC --> DB
+    CRAWL --> DB
+    DB --> FTS[SQLite FTS5]
+    DB --> VEC[sqlite-vec]
+    REPO[Local GitHub Repo Checkout] --> EVIDENCE[Live Repo Evidence]
+    FTS --> CLI[tg-support CLI]
+    VEC --> CLI
+    EVIDENCE --> CLI
+    CLI --> CODEX[Codex Skill]
+    CLI --> CLAUDE[Claude Guidance]
+    CODEX --> DRAFT[Evidence-backed Draft]
+    CLAUDE --> DRAFT
+    DRAFT --> CONFIRM[Operator Confirmation Token]
+    CONFIRM --> POST[Post to Telegram]
+```
 
 ## Codex And Claude
 
