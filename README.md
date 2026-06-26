@@ -59,7 +59,7 @@ codex plugin add telegram-support-agent@tg-customer-support-plugin
 After install, open Codex in the workspace where you want to use the support agent and ask it to use the `telegram-support` skill, for example:
 
 ```text
-Use the telegram-support skill to set up profile default for @my-support-chat with seed https://example.com.
+/telegram-support-agent setup
 ```
 
 The first time the workflow runs the bundled `scripts/tg-support` helper, it creates its own runtime environment, installs the Telegram, browser-rendering, and retrieval dependencies, and installs Chromium for Playwright. Retrieval uses SQLite FTS5, sqlite-vec, and local `BAAI/bge-small-en-v1.5` embeddings. The first index build may need to download or load the BGE Small model through `sentence-transformers`; after that, search runs against the local profile index.
