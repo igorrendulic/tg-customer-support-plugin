@@ -10,7 +10,7 @@ from tg_support.indexing.embeddings import BgeEmbeddingModel, RetrievalDependenc
 from tg_support.indexing.hybrid import reciprocal_rank_fusion
 from tg_support.indexing.vector import SQLiteVecStore
 from tg_support.storage.db import DocumentRecord
-from tests.conftest import make_test_retriever, seed_messages
+from tests.conftest import make_test_retriever, seed_messages, seed_username_search_messages
 
 
 def test_hybrid_search_returns_source_references(db):
@@ -50,6 +50,64 @@ def test_search_with_fts_syntax_punctuation_does_not_crash(db):
     results = retriever.search("passkey-reset: policy?", limit=3)
 
     assert results
+
+
+def test_exact_username_author_match_is_boosted_above_text_mentions(db):
+    seed_username_search_messages(db)
+    chunk_messages(db, window=0)
+    retriever = make_test_retriever(db)
+    retriever.build()
+
+    results = retriever.search("crinx7", limit=3)
+
+    assert results[0]["source_type"] == "telegram"
+    assert results[0]["metadata"]["author"] == "Crinx7"
+    assert "I cannot access my mailbox" in results[0]["text"]
+
+
+def test_at_prefixed_username_matches_author_metadata(db):
+    seed_username_search_messages(db)
+    chunk_messages(db, window=0)
+    retriever = make_test_retriever(db)
+    retriever.build()
+
+    results = retriever.search("@crinx7", limit=3)
+
+    assert results[0]["metadata"]["author"] == "Crinx7"
+
+
+def test_username_boost_does_not_replace_result_shape(db):
+    seed_username_search_messages(db)
+    chunk_messages(db, window=0)
+    retriever = make_test_retriever(db)
+    retriever.build()
+
+    result = retriever.search("crinx7", limit=1)[0]
+
+    assert {"chunk_id", "document_id", "source_type", "source_id", "score", "text", "metadata", "source_updated_at"} == set(result)
+    assert result["source_type"] == "telegram"
+
+
+def test_multiple_username_author_matches_prefer_recent_messages(db):
+    chat_id = seed_username_search_messages(db)
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 4,
+            "author_id": 11,
+            "author_username": "Crinx7",
+            "sent_at": "2026-06-01T12:03:00Z",
+            "text": "Follow up about recovery keys",
+        },
+    )
+    chunk_messages(db, window=0)
+    retriever = make_test_retriever(db)
+    retriever.build()
+
+    results = retriever.search("crinx7", limit=3)
+
+    assert results[0]["metadata"]["author"] == "Crinx7"
+    assert "Follow up about recovery keys" in results[0]["text"]
 
 
 def test_sqlite_vec_load_failure_includes_sqlite_version(monkeypatch):

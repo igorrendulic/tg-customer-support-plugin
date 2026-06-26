@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+import re
 
 from tg_support.indexing.embeddings import EmbeddingModel, RetrievalDependencyError
 from tg_support.indexing.lexical import lexical_search
 from tg_support.indexing.vector import VectorSearcher, VectorStore
 from tg_support.storage.db import DocumentRecord, SupportDatabase
+
+USERNAME_RE = re.compile(r"@?[a-z0-9_]+", re.I)
+USERNAME_MATCH_BOOST = 20.0
 
 
 def reciprocal_rank_fusion(result_sets: list[list[tuple[DocumentRecord, float]]], limit: int = 10, k: int = 60) -> list[tuple[DocumentRecord, float]]:
@@ -47,9 +51,16 @@ class HybridRetriever:
         as_of = as_of or date.today()
         documents = [document for document in self.db.documents() if include_inactive_manual or self._eligible(document, as_of)]
         candidate_limit = max(limit * 4, 20)
-        fused = self._fused_search(documents, query, candidate_limit)
+        username_matches = self._username_author_matches(query)
+        username_match_ids = {document.id for document in username_matches}
+        fused = self._fused_search(documents, query, candidate_limit, username_matches)
         boosted = [
-            (document, score + 10.0 if document.source_type == "manual" and self._eligible(document, as_of) else score)
+            (
+                document,
+                score
+                + (10.0 if document.source_type == "manual" and self._eligible(document, as_of) else 0.0)
+                + (USERNAME_MATCH_BOOST if document.id in username_match_ids else 0.0),
+            )
             for document, score in fused
         ]
         return [self._result_dict(document, score) for document, score in sorted(boosted, key=lambda item: (-item[1], item[0].id))[:limit]]
@@ -60,13 +71,32 @@ class HybridRetriever:
         conflicts = self._conflicts_for(query, evidence, limit=limit, as_of=as_of)
         return {"evidence": evidence, "conflicts": conflicts}
 
-    def _fused_search(self, documents: list[DocumentRecord], query: str, limit: int) -> list[tuple[DocumentRecord, float]]:
+    def _fused_search(
+        self,
+        documents: list[DocumentRecord],
+        query: str,
+        limit: int,
+        username_matches: list[DocumentRecord] | None = None,
+    ) -> list[tuple[DocumentRecord, float]]:
         if not documents:
             return []
         eligible_ids = {document.id for document in documents}
         lexical = [(document, score) for document, score in lexical_search(self.db, query, limit=limit) if document.id in eligible_ids]
         vector = [(document, score) for document, score in self.vector_searcher.search(query, limit=limit) if document.id in eligible_ids]
-        return reciprocal_rank_fusion([lexical, vector], limit=limit)
+        username = [(document, 1.0) for document in username_matches or [] if document.id in eligible_ids]
+        return reciprocal_rank_fusion([username, lexical, vector], limit=limit)
+
+    def _username_author_matches(self, query: str) -> list[DocumentRecord]:
+        username = self._normalized_username_query(query)
+        if username is None:
+            return []
+        return self.db.telegram_documents_by_author_username(username)
+
+    def _normalized_username_query(self, query: str) -> str | None:
+        candidate = query.strip()
+        if not USERNAME_RE.fullmatch(candidate):
+            return None
+        return candidate.removeprefix("@").casefold()
 
     def _conflicts_for(self, query: str, evidence: list[dict], limit: int, as_of: date) -> list[dict]:
         manual_results = [result for result in evidence if result["source_type"] == "manual"]

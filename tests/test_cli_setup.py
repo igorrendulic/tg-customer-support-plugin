@@ -13,7 +13,7 @@ from tg_support.storage.db import SupportDatabase
 from tg_support.support.drafting import create_draft
 from tg_support.support.context import draft_context
 from tg_support.telegram_client import TelegramError
-from tests.conftest import make_test_retriever, patch_test_retriever, seed_messages
+from tests.conftest import make_test_retriever, patch_test_retriever, seed_messages, seed_username_search_messages
 
 
 def test_cli_setup_stores_normalized_config(tmp_path, capsys, monkeypatch):
@@ -290,6 +290,27 @@ def test_search_reports_retrieval_dependency_errors(tmp_path, capsys, monkeypatc
     assert output["ok"] is False
     assert output["error"] == "sqlite extension unavailable"
     assert output["sqlite_version"] == sqlite3.sqlite_version
+
+
+def test_search_boosts_exact_username_author_matches(tmp_path, capsys, monkeypatch):
+    patch_test_retriever(monkeypatch)
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    assert main(["setup", "--chat", "support"]) == 0
+    config = load_config(tmp_path / "default" / "config.json")
+    db = SupportDatabase(config.db_path)
+    seed_username_search_messages(db)
+    chunk_messages(db, window=0)
+    make_test_retriever(db).build()
+    capsys.readouterr()
+
+    assert main(["search", "@crinx7"]) == 0
+    output = json.loads(capsys.readouterr().out)
+
+    assert output["ok"] is True
+    assert output["results"][0]["source_type"] == "telegram"
+    assert output["results"][0]["metadata"]["author"] == "Crinx7"
+    assert "I cannot access my mailbox" in output["results"][0]["text"]
+    assert output["results"][0]["document_id"]
 
 
 def test_draft_context_reports_retrieval_dependency_errors(tmp_path, capsys, monkeypatch):
