@@ -8,8 +8,9 @@ from tg_support.indexing.lexical import lexical_search
 from tg_support.indexing.vector import VectorSearcher, VectorStore
 from tg_support.storage.db import DocumentRecord, SupportDatabase
 
-USERNAME_RE = re.compile(r"@?[a-z0-9_]+", re.I)
+AUTHOR_QUERY_RE = re.compile(r"@?[^\s].*", re.S)
 USERNAME_MATCH_BOOST = 20.0
+FUZZY_AUTHOR_MATCH_BOOST = 6.0
 
 
 def reciprocal_rank_fusion(result_sets: list[list[tuple[DocumentRecord, float]]], limit: int = 10, k: int = 60) -> list[tuple[DocumentRecord, float]]:
@@ -53,13 +54,16 @@ class HybridRetriever:
         candidate_limit = max(limit * 4, 20)
         username_matches = self._username_author_matches(query)
         username_match_ids = {document.id for document in username_matches}
-        fused = self._fused_search(documents, query, candidate_limit, username_matches)
+        fuzzy_author_matches = [] if username_matches else self._fuzzy_author_matches(query)
+        fuzzy_author_match_ids = {document.id for document in fuzzy_author_matches}
+        fused = self._fused_search(documents, query, candidate_limit, [*username_matches, *fuzzy_author_matches])
         boosted = [
             (
                 document,
                 score
                 + (10.0 if document.source_type == "manual" and self._eligible(document, as_of) else 0.0)
-                + (USERNAME_MATCH_BOOST if document.id in username_match_ids else 0.0),
+                + (USERNAME_MATCH_BOOST if document.id in username_match_ids else 0.0)
+                + (FUZZY_AUTHOR_MATCH_BOOST if document.id in fuzzy_author_match_ids else 0.0),
             )
             for document, score in fused
         ]
@@ -87,14 +91,20 @@ class HybridRetriever:
         return reciprocal_rank_fusion([username, lexical, vector], limit=limit)
 
     def _username_author_matches(self, query: str) -> list[DocumentRecord]:
-        username = self._normalized_username_query(query)
+        username = self._normalized_author_identity_query(query)
         if username is None:
             return []
         return self.db.telegram_documents_by_author_username(username)
 
-    def _normalized_username_query(self, query: str) -> str | None:
+    def _fuzzy_author_matches(self, query: str) -> list[DocumentRecord]:
+        username = self._normalized_author_identity_query(query)
+        if username is None:
+            return []
+        return self.db.telegram_documents_by_fuzzy_author_identity(username)
+
+    def _normalized_author_identity_query(self, query: str) -> str | None:
         candidate = query.strip()
-        if not USERNAME_RE.fullmatch(candidate):
+        if not AUTHOR_QUERY_RE.fullmatch(candidate):
             return None
         return candidate.removeprefix("@").casefold()
 

@@ -28,6 +28,8 @@ Use `scripts/tg-support draft-context --user <username>` or `--message-id <id>`.
 
 When `draft-context` returns `evidence_sufficiency`, show its state and reasons with the evidence summary. If `direct_answer_supported` is false, or Repository Evidence has a stale warning, present two options before creating a draft: a cautious evidence-limited answer and a DM follow-up asking only for the missing support-blocking information. Do not save the DM follow-up wording as Manual Knowledge or cite it as evidence.
 
+When `draft-context` returns `fuzzy_author_candidates`, show them as disambiguation options only. Do not treat fuzzy candidates as target history until the operator chooses or reruns with an exact username/display name.
+
 When `draft-context` returns `target.language`, draft in that language unless the operator asks otherwise. Use `translated_text` only as helper context for understanding evidence, not as support truth and not as a reason to answer in English.
 
 Show the exact selected reply text and evidence to the operator, then create and confirm a draft only after the operator explicitly says `post`.

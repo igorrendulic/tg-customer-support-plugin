@@ -100,6 +100,107 @@ def test_at_prefixed_username_matches_author_metadata(db):
     assert results[0]["metadata"]["author"] == "Crinx7"
 
 
+def test_exact_display_name_match_works_when_username_exists(db):
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "helper123",
+            "author_name": "Anon",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "I cannot access my mailbox",
+        },
+    )
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 2,
+            "author_id": 11,
+            "author_username": "helper",
+            "sent_at": "2026-06-01T12:01:00Z",
+            "text": "Anon was mentioned in a different support thread",
+        },
+    )
+    chunk_messages(db, window=0)
+    retriever = make_test_retriever(db)
+    retriever.build()
+
+    results = retriever.search("Anon", limit=3)
+
+    assert results[0]["metadata"]["author"] == "helper123"
+    assert results[0]["metadata"]["author_identities"] == ["helper123", "Anon"]
+    assert "mailbox" in results[0]["text"]
+
+
+def test_exact_display_name_match_accepts_spaces(db):
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "helper123",
+            "author_name": "Anon Helper",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "I cannot access my mailbox",
+        },
+    )
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 2,
+            "author_id": 11,
+            "author_username": "helper",
+            "sent_at": "2026-06-01T12:01:00Z",
+            "text": "Anon Helper was mentioned in a different support thread",
+        },
+    )
+    chunk_messages(db, window=0)
+    retriever = make_test_retriever(db)
+    retriever.build()
+
+    results = retriever.search("Anon Helper", limit=3)
+
+    assert results[0]["metadata"]["author"] == "helper123"
+    assert results[0]["metadata"]["author_identities"] == ["helper123", "Anon Helper"]
+
+
+def test_fuzzy_author_identity_fallback_runs_only_after_exact_miss(db):
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "helper123",
+            "author_name": "Anon",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "I cannot access my mailbox",
+        },
+    )
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 2,
+            "author_id": 11,
+            "author_username": "Ann",
+            "sent_at": "2026-06-01T12:01:00Z",
+            "text": "Exact author message about passkeys",
+        },
+    )
+    chunk_messages(db, window=0)
+    retriever = make_test_retriever(db)
+    retriever.build()
+
+    exact_results = retriever.search("Ann", limit=3)
+    fuzzy_results = retriever.search("Ano", limit=3)
+
+    assert exact_results[0]["metadata"]["author"] == "Ann"
+    assert fuzzy_results[0]["metadata"]["author"] == "helper123"
+
+
 class FakeTranslationHelper:
     def translate_to_english(self, _text: str, _source_language: str) -> str:
         return "just applied for a mailbox"

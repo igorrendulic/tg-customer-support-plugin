@@ -6,6 +6,7 @@ import sqlite3
 from collections.abc import Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -421,13 +422,40 @@ class SupportDatabase:
                 WHERE d.source_type = 'telegram'
                   AND (
                     lower(m.author_username) = ?
-                    OR (NULLIF(m.author_username, '') IS NULL AND lower(u.display_name) = ?)
+                    OR lower(u.username) = ?
+                    OR lower(u.display_name) = ?
                   )
                 ORDER BY m.sent_at DESC, d.id ASC
                 """,
-                (normalized, normalized),
+                (normalized, normalized, normalized),
             ).fetchall()
         return [self._document_from_row(row) for row in rows]
+
+    def telegram_documents_by_fuzzy_author_identity(self, username: str, limit: int = 5) -> list[DocumentRecord]:
+        normalized = username.lstrip("@").casefold()
+        if not normalized:
+            return []
+        candidates = []
+        for document in self.documents():
+            if document.source_type != "telegram":
+                continue
+            identities = document.metadata.get("author_identities") or []
+            if not isinstance(identities, list):
+                continue
+            identity_values = [str(identity).casefold() for identity in identities if str(identity).strip()]
+            if not identity_values:
+                continue
+            score = max((self._identity_similarity(normalized, identity) for identity in identity_values), default=0.0)
+            if score >= 0.75:
+                candidates.append((document, score))
+        return [
+            document
+            for document, _score in sorted(
+                candidates,
+                key=lambda item: (item[1], str(item[0].metadata.get("sent_at") or ""), -item[0].id),
+                reverse=True,
+            )[:limit]
+        ]
 
     def telegram_message_author_rows(self) -> list[dict[str, Any]]:
         with self.connect() as conn:
@@ -439,6 +467,7 @@ class SupportDatabase:
                   m.telegram_message_id,
                   m.author_id,
                   m.author_username,
+                  u.username AS author_user_username,
                   u.display_name AS author_display_name,
                   COALESCE(NULLIF(m.author_username, ''), NULLIF(u.display_name, ''), 'unknown') AS author_label,
                   m.sent_at,
@@ -451,7 +480,7 @@ class SupportDatabase:
                 ORDER BY m.chat_id, m.telegram_message_id
                 """
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [self._message_author_row(row) for row in rows]
 
     def search_fts(self, query: str, limit: int) -> list[tuple[DocumentRecord, float]]:
         if not query:
@@ -516,6 +545,35 @@ class SupportDatabase:
         except json.JSONDecodeError:
             metadata = {}
         translated = metadata.get("translated_text")
+        author_identities = metadata.get("author_identities")
+        identity_text = ""
+        if isinstance(author_identities, list):
+            identity_text = "\n".join(str(identity) for identity in author_identities if str(identity).strip())
         if isinstance(translated, str) and translated.strip():
-            return f"{text}\n{translated}"
+            text = f"{text}\n{translated}"
+        if identity_text:
+            text = f"{text}\n{identity_text}"
         return text
+
+    def _message_author_row(self, row: sqlite3.Row) -> dict[str, Any]:
+        result = dict(row)
+        identities = []
+        seen = set()
+        for value in (result.get("author_username"), result.get("author_user_username"), result.get("author_display_name")):
+            if value is None:
+                continue
+            identity = str(value).strip()
+            normalized = identity.casefold()
+            if not identity or normalized in seen:
+                continue
+            identities.append(identity)
+            seen.add(normalized)
+        result["author_identities"] = identities
+        return result
+
+    def _identity_similarity(self, query: str, identity: str) -> float:
+        if query == identity:
+            return 1.0
+        if identity.startswith(query) or query.startswith(identity):
+            return min(len(query), len(identity)) / max(len(query), len(identity))
+        return SequenceMatcher(None, query, identity).ratio()

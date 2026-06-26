@@ -111,6 +111,8 @@ When evidence is sufficient, the agent should draft a direct answer. When eviden
 
 DM follow-up wording is a Fallback Draft Option. It is not a Manual Knowledge Note, does not resolve evidence conflicts, and should not be cited as support truth.
 
+`draft-context` may return `fuzzy_author_candidates` when a requested user has no exact username/display-name match. Agents should show those candidates only for disambiguation and should not use them as target history until the operator chooses or reruns with an exact identity.
+
 `draft-context` may also return `target.language` for reply drafting. Agents should draft in that language unless the operator asks otherwise. `translated_text` is helper context for retrieval and understanding only; it should not replace the original evidence and should not force an English reply.
 
 ## Manual Knowledge

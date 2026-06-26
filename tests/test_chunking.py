@@ -28,6 +28,28 @@ def test_telegram_chunks_use_display_name_author_labels(db):
     assert chunk.text == "crinx7: It says email already exist"
 
 
+def test_telegram_chunks_store_all_visible_author_identities(db):
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "helper123",
+            "author_name": "Anon",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "I cannot access my mailbox",
+        },
+    )
+
+    chunk_messages(db, window=0)
+
+    chunk = db.chunks()[0]
+    assert chunk.metadata["author"] == "helper123"
+    assert chunk.metadata["author_identities"] == ["helper123", "Anon"]
+    assert chunk.text == "helper123: I cannot access my mailbox"
+
+
 def test_telegram_chunks_skip_empty_neighbor_messages(db):
     chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
     db.insert_message(

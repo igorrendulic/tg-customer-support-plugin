@@ -83,6 +83,7 @@ def chunk_messages(db: SupportDatabase, window: int = 3, translation_helper: Tra
             "chat": row["chat"],
             "message_id": row["telegram_message_id"],
             "author": row["author_label"],
+            "author_identities": row["author_identities"],
             "sent_at": row["sent_at"],
         }
         source_language = infer_language(row["text"])
