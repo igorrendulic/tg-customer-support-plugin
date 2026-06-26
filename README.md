@@ -17,7 +17,10 @@ It lets Codex or Claude search your Telegram support history, website/docs, manu
 
 Search Telegram support history, local docs, and repo evidence. Draft a reply. Post only after explicit confirmation.
 
-![Demo](docs/assets/tg_support_demo.gif)
+<!-- ![Demo](docs/assets/tg_support_demo.gif) -->
+<p align="center">
+  <img src="./docs/assets/tg_support_demo.gif" alt="Demo" width="600">
+</p>
 
 ## Who this is for
 
@@ -56,44 +59,39 @@ codex plugin add telegram-support-agent@tg-customer-support-plugin
 
 ## Quickstart
 
-After install, open Codex in the workspace where you want to use the support agent and ask it to use the `telegram-support` skill, for example:
-
-```text
-Use the telegram-support skill to set up profile default for @my-support-chat with seed https://example.com.
-```
-
-The first time the workflow runs the bundled `scripts/tg-support` helper, it creates its own runtime environment, installs the Telegram, browser-rendering, and retrieval dependencies, and installs Chromium for Playwright. Retrieval uses SQLite FTS5, sqlite-vec, and local `BAAI/bge-small-en-v1.5` embeddings. The first index build may need to download or load the BGE Small model through `sentence-transformers`; after that, search runs against the local profile index.
-
-Then ask Codex to log in, sync Telegram history, crawl the configured seed, and build the local index:
-
-```text
-Use the telegram-support skill to log in and build the local corpus for profile default.
-```
-
-Codex will first check profile readiness. If Telegram API credentials are missing, it will ask you for the API ID and API hash from `https://my.telegram.org`, store them under the local profile, and continue setup from there.
-
-Once indexing finishes, ask normal support questions in Codex:
-
-```text
-Use the telegram-support skill to find recent passkey setup issues.
-Use the telegram-support skill to draft a reply for message 123.
-```
-
-To run the CLI directly outside Codex:
+After install, run the agent setup flow:
 
 ```bash
-git clone https://github.com/igorrendulic/tg-customer-support-plugin.git
-cd tg-customer-support-plugin
-scripts/tg-support --help
+$telegram-support-agent setup
 ```
 
-By default, the auto-created environment lives under `~/.tg-support/.venv`. Set `TG_SUPPORT_VENV` to put it somewhere else.
+Setup asks four questions:
 
-The package also exposes a `tg-support` console script inside that auto-created environment:
+1. Telegram channel, for example `my-support-chat`.
+2. Website, for example `https://example.com`.
+3. Repository and branch, for example `https://github.com/owner/project` and `production`. If you leave the branch blank, it defaults to `main`.
+4. Operator identities, for example `founderhandle,supportlead`. These are the support operators whose replies should be treated as official answers rather than user or community messages.
+
+Next, setup tells you to create Telegram API credentials:
+
+1. Go to `https://my.telegram.org`.
+2. Open API development tools.
+3. Create an app.
+4. Copy the API ID and API hash back into the setup flow.
+
+The API hash is stored locally under `~/.tg-support` and is not printed back in normal output.
+
+After credentials are saved, the agent logs in to Telegram, syncs support history, crawls the configured website, clones the configured repository for read-only evidence.
+
+Once indexing finishes, ask normal support questions:
 
 ```bash
-~/.tg-support/.venv/bin/tg-support --help
+$telegram-support-agent stats
+$telegram-support-agent "What could operators improve in their answers?"
+$telegram-support-agent "answer latest user message"
+$telegram-support-agent "answer user somehandle_or_display_name"
 ```
+
 
 ### Development Install
 
@@ -112,7 +110,7 @@ Add Telegram and browser-rendering adapters when you need real Telegram login or
 .venv/bin/pip install -e ".[telegram,render,retrieval,dev]"
 ```
 
-## Use
+## Advanced Use
 
 Create a local profile with one Telegram chat. Website or blog seeds are optional:
 
@@ -134,8 +132,8 @@ Optionally add one or more operator identities so Support Exchanges can distingu
 ```bash
 scripts/tg-support --profile default setup \
   --chat my-support-chat \
-  --operator igormailio \
-  --operator Igor
+  --operator firstoperator \
+  --operator secondoperator
 ```
 
 Optionally add a GitHub repository and branch for code-grounded behavior or debugging answers. The branch defaults to `main` when omitted. This uses your existing local `git` or `gh` authentication; do not paste GitHub credentials into the support workflow.
