@@ -71,7 +71,14 @@ Add Telegram and browser-rendering adapters when you need real Telegram login or
 
 ## Use
 
-Create a local profile with one Telegram chat and at least one website or blog seed:
+Create a local profile with one Telegram chat. Website or blog seeds are optional:
+
+```bash
+scripts/tg-support --profile default setup \
+  --chat my-support-chat
+```
+
+Optionally add website or blog seeds for public support resources:
 
 ```bash
 scripts/tg-support --profile default setup \
@@ -79,14 +86,13 @@ scripts/tg-support --profile default setup \
   --seed https://example.com/blog
 ```
 
-Optionally add a GitHub repository and branch for code-grounded behavior or debugging answers. This uses your existing local `git` or `gh` authentication; do not paste GitHub credentials into the support workflow.
+Optionally add a GitHub repository and branch for code-grounded behavior or debugging answers. The branch defaults to `main` when omitted. This uses your existing local `git` or `gh` authentication; do not paste GitHub credentials into the support workflow.
 
 ```bash
 scripts/tg-support --profile default setup \
   --chat my-support-chat \
   --seed https://example.com/blog \
-  --repository owner/project \
-  --repository-branch production
+  --repository owner/project
 ```
 
 Then build the local corpus:
@@ -99,6 +105,8 @@ scripts/tg-support --profile default crawl
 scripts/tg-support --profile default index
 scripts/tg-support --profile default status
 ```
+
+`crawl` follows same-scope links two levels deep by default. Use `--depth 0` to crawl only configured seed URLs.
 
 `index` creates source-linked documents, an FTS5 exact-term index, and a 384-dimensional sqlite-vec vector index for `BAAI/bge-small-en-v1.5`. If the retrieval dependencies, embedding model, or local SQLite extension loading are not available, the command returns JSON with `ok: false`, the SQLite version when relevant, and `next_action` instead of silently falling back to weaker search.
 

@@ -115,7 +115,7 @@ def canonicalize_repository(value: str) -> str:
 
 
 def normalize_branch(value: str | None) -> str:
-    branch = (value or "production").strip()
+    branch = (value or "main").strip()
     if not branch:
         raise ConfigError("Repository branch is required.")
     if branch.startswith("-") or ".." in branch or branch.endswith(".lock") or any(ch.isspace() for ch in branch):
@@ -145,8 +145,6 @@ def load_config(path: Path) -> SupportConfig:
 def config_from_dict(data: dict[str, Any], profile_dir_override: Path | None = None) -> SupportConfig:
     chat = normalize_chat_identifier(str(data.get("chat", "")))
     seeds_data = data.get("seeds") or []
-    if not seeds_data:
-        raise ConfigError("At least one website/blog seed URL is required.")
     seeds: list[SeedConfig] = []
     for item in seeds_data:
         if isinstance(item, str):

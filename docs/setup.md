@@ -28,19 +28,25 @@ python3 -m venv .venv
 ## Configure
 
 ```bash
-scripts/tg-support --profile default setup --chat my-support-chat --seed https://example.com/blog
+scripts/tg-support --profile default setup --chat my-support-chat
 ```
 
 Chat inputs such as `channel-name`, `@channel-name`, and `https://t.me/channel-name` normalize to the same configured chat.
 
-Repository Evidence is optional. Add a GitHub repository and branch when you want behavior or debugging answers grounded in production-branch code:
+Website or blog seed URLs are optional. Add one or more when you want public support resources included in the local index:
 
 ```bash
 scripts/tg-support --profile default setup \
   --chat my-support-chat \
-  --seed https://example.com/blog \
-  --repository owner/project \
-  --repository-branch production
+  --seed https://example.com/blog
+```
+
+Repository Evidence is optional. Add a GitHub repository and branch when you want behavior or debugging answers grounded in code. The branch defaults to `main` when omitted:
+
+```bash
+scripts/tg-support --profile default setup \
+  --chat my-support-chat \
+  --repository owner/project
 ```
 
 Repository setup uses your existing local `git` or `gh` authentication. The support workflow does not ask for GitHub credentials and does not modify the configured repository.
@@ -50,6 +56,8 @@ Seed render modes:
 - `auto`: fetch static HTML first and render JavaScript app-shell pages.
 - `always`: use Playwright rendering.
 - `never`: do not render; empty app shells are reported without browser work.
+
+`crawl` follows same-scope links two levels deep by default. Use `--depth 0` to crawl only configured seed URLs, or pass another non-negative depth for a broader bounded crawl.
 
 ## Telegram API Credentials
 

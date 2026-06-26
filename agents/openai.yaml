@@ -2,7 +2,7 @@ name: telegram-support-agent
 description: Local Telegram support workflow for Codex.
 commands:
   status: "scripts/tg-support status"
-  setup: "scripts/tg-support setup --chat <chat> --seed <url>"
+  setup: "scripts/tg-support setup --chat <chat> [--seed <url>] [--repository <owner/repo-or-url-or-path>] [--repository-branch <branch>]"
   credentials: "scripts/tg-support credentials --api-id <api-id> --api-hash-stdin"
   crawl: "scripts/tg-support crawl"
   login: "scripts/tg-support login"

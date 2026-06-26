@@ -80,11 +80,14 @@ def test_status_reports_repository_config_without_blocking_readiness(tmp_path, c
     assert output["next_action"] == "credentials"
 
 
-def test_missing_setup_inputs_fail_without_profile(tmp_path, capsys, monkeypatch):
+def test_cli_setup_allows_no_seed(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
     code = main(["setup", "--chat", "support"])
-    assert code == 2
-    assert not (tmp_path / "default" / "config.json").exists()
+    assert code == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["ok"] is True
+    config = load_config(tmp_path / "default" / "config.json")
+    assert config.seeds == ()
 
 
 def test_status_without_profile_suggests_setup(tmp_path, capsys, monkeypatch):
@@ -177,6 +180,55 @@ def test_status_progresses_through_corpus_readiness(tmp_path, capsys, monkeypatc
     output = json.loads(capsys.readouterr().out)
     assert output["ok"] is True
     assert output["next_action"] == "ready"
+
+
+def test_status_skips_crawl_when_no_seeds_configured(tmp_path, capsys, monkeypatch):
+    patch_test_retriever(monkeypatch)
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    assert main(["setup", "--chat", "support"]) == 0
+    monkeypatch.setattr("sys.stdin", StringIO("secret\n"))
+    assert main(["credentials", "--api-id", "123", "--api-hash-stdin"]) == 0
+    config = load_config(tmp_path / "default" / "config.json")
+    config.session_path.write_text("fake session")
+    write_telegram_authorization(config)
+    db = SupportDatabase(config.db_path)
+    seed_messages(db)
+    capsys.readouterr()
+
+    assert main(["status"]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["checks"]["web_crawl"] is True
+    assert output["next_action"] == "index"
+
+
+def test_cli_crawl_uses_depth_two_by_default(tmp_path, capsys, monkeypatch):
+    class FakeCrawler:
+        def __init__(self, _db):
+            pass
+
+        def crawl_seed_deep(self, seed, max_depth=0):
+            assert seed.url == "https://example.com/docs"
+            assert max_depth == 2
+            return []
+
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    monkeypatch.setattr("tg_support.cli.WebCrawler", FakeCrawler)
+    assert main(["setup", "--chat", "support", "--seed", "example.com/docs"]) == 0
+    capsys.readouterr()
+
+    assert main(["crawl"]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output == {"ok": True, "results": []}
+
+
+def test_cli_setup_repository_branch_defaults_to_main(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    code = main(["setup", "--chat", "support", "--repository", "owner/project"])
+    assert code == 0
+    capsys.readouterr()
+    config = load_config(tmp_path / "default" / "config.json")
+    assert config.repository is not None
+    assert config.repository.branch == "main"
 
 
 def test_index_reports_retrieval_dependency_errors(tmp_path, capsys, monkeypatch):

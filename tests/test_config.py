@@ -24,9 +24,9 @@ def test_chat_identifier_normalizes(value):
     assert normalize_chat_identifier(value) == "channel-name"
 
 
-def test_setup_config_requires_seed(tmp_path):
-    with pytest.raises(ConfigError):
-        config_from_dict({"chat": "support", "seeds": []}, profile_dir_override=tmp_path)
+def test_setup_config_allows_no_seed(tmp_path):
+    config = config_from_dict({"chat": "support", "seeds": []}, profile_dir_override=tmp_path)
+    assert config.seeds == ()
 
 
 def test_config_stores_profile_outside_source_tree(tmp_path):
@@ -101,6 +101,15 @@ def test_repository_config_accepts_git_ssh_shorthand(tmp_path):
 def test_repository_config_is_optional(tmp_path):
     config = config_from_dict({"chat": "@support", "seeds": ["example.com/blog"]}, profile_dir_override=tmp_path / "profile")
     assert config.repository is None
+
+
+def test_repository_branch_defaults_to_main(tmp_path):
+    config = config_from_dict(
+        {"chat": "@support", "repository": {"repository": "owner/project"}},
+        profile_dir_override=tmp_path / "profile",
+    )
+    assert config.repository is not None
+    assert config.repository.branch == "main"
 
 
 def test_repository_config_rejects_invalid_values():

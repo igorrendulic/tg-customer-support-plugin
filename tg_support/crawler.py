@@ -36,7 +36,10 @@ def extract_page(html: str, base_url: str) -> tuple[str | None, str, list[str], 
     text = re.sub(r"\n{3,}", "\n\n", main.get_text("\n", strip=True))
     links = []
     for link in soup.find_all("a", href=True):
-        links.append(canonicalize_url(urljoin(base_url, link["href"])))
+        href = urljoin(base_url, link["href"])
+        if urlparse(href).scheme not in {"http", "https"}:
+            continue
+        links.append(canonicalize_url(href))
     app_shell = len(text.split()) < 25 and bool(soup.find(id="root") or soup.find(id="app"))
     return title, text, sorted(set(links)), app_shell
 
@@ -44,7 +47,8 @@ def extract_page(html: str, base_url: str) -> tuple[str | None, str, list[str], 
 def in_scope(url: str, seed: SeedConfig) -> bool:
     parsed_url = urlparse(url)
     parsed_seed = urlparse(seed.scope or seed.url)
-    return parsed_url.netloc == parsed_seed.netloc and parsed_url.path.startswith(parsed_seed.path.rstrip("/") or "/")
+    scope_path = parsed_seed.path.rstrip("/") or "/"
+    return parsed_url.netloc == parsed_seed.netloc and (scope_path == "/" or parsed_url.path == scope_path or parsed_url.path.startswith(f"{scope_path}/"))
 
 
 class WebCrawler:
@@ -73,3 +77,27 @@ class WebCrawler:
         except Exception as exc:
             page_id = self.db.upsert_page(url, None, "", status="error", error=str(exc))
             return CrawlResult(url, page_id, False, "error", (), str(exc))
+
+    def crawl_seed_deep(self, seed: SeedConfig, max_depth: int = 2) -> list[CrawlResult]:
+        start_url = canonicalize_url(seed.url)
+        scope = seed.scope or seed.url
+        pending: list[tuple[str, int]] = [(start_url, 0)]
+        visited: set[str] = set()
+        results: list[CrawlResult] = []
+
+        while pending:
+            url, depth = pending.pop(0)
+            if url in visited:
+                continue
+            visited.add(url)
+
+            result = self.crawl_seed(SeedConfig(url, render=seed.render, scope=scope))
+            results.append(result)
+
+            if depth >= max_depth:
+                continue
+            for link in result.discovered:
+                if link not in visited:
+                    pending.append((link, depth + 1))
+
+        return results
