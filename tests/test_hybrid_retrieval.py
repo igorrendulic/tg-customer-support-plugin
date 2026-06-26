@@ -167,6 +167,30 @@ def test_exact_display_name_match_accepts_spaces(db):
     assert results[0]["metadata"]["author_identities"] == ["helper123", "Anon Helper"]
 
 
+def test_exact_author_side_channel_does_not_exclude_normal_evidence(db):
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "passkey",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "I cannot access my mailbox",
+        },
+    )
+    db.upsert_page("https://example.com/passkeys", "Passkeys", "Passkey setup and login troubleshooting guide.")
+    chunk_messages(db, window=0)
+    chunk_pages(db)
+    retriever = make_test_retriever(db)
+    retriever.build()
+
+    results = retriever.search("passkey", limit=3)
+
+    assert results[0]["metadata"]["author"] == "passkey"
+    assert any(result["source_type"] == "web" and "Passkey setup" in result["text"] for result in results)
+
+
 def test_fuzzy_author_identity_fallback_runs_only_after_exact_miss(db):
     chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
     db.insert_message(

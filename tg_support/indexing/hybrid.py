@@ -8,7 +8,7 @@ from tg_support.indexing.lexical import lexical_search
 from tg_support.indexing.vector import VectorSearcher, VectorStore
 from tg_support.storage.db import DocumentRecord, SupportDatabase
 
-AUTHOR_QUERY_RE = re.compile(r"@?[^\s].*", re.S)
+AUTHOR_IDENTITY_RE = re.compile(r"@?[a-z0-9_][a-z0-9_ -]*", re.I)
 USERNAME_MATCH_BOOST = 20.0
 FUZZY_AUTHOR_MATCH_BOOST = 6.0
 
@@ -56,7 +56,8 @@ class HybridRetriever:
         username_match_ids = {document.id for document in username_matches}
         fuzzy_author_matches = [] if username_matches else self._fuzzy_author_matches(query)
         fuzzy_author_match_ids = {document.id for document in fuzzy_author_matches}
-        fused = self._fused_search(documents, query, candidate_limit, [*username_matches, *fuzzy_author_matches])
+        author_side_channel = [*username_matches, *fuzzy_author_matches]
+        fused = self._fused_search(documents, query, candidate_limit, author_side_channel)
         boosted = [
             (
                 document,
@@ -80,15 +81,15 @@ class HybridRetriever:
         documents: list[DocumentRecord],
         query: str,
         limit: int,
-        username_matches: list[DocumentRecord] | None = None,
+        author_side_channel: list[DocumentRecord] | None = None,
     ) -> list[tuple[DocumentRecord, float]]:
         if not documents:
             return []
         eligible_ids = {document.id for document in documents}
         lexical = [(document, score) for document, score in lexical_search(self.db, query, limit=limit) if document.id in eligible_ids]
         vector = [(document, score) for document, score in self.vector_searcher.search(query, limit=limit) if document.id in eligible_ids]
-        username = [(document, 1.0) for document in username_matches or [] if document.id in eligible_ids]
-        return reciprocal_rank_fusion([username, lexical, vector], limit=limit)
+        author = [(document, 1.0) for document in author_side_channel or [] if document.id in eligible_ids]
+        return reciprocal_rank_fusion([author, lexical, vector], limit=limit)
 
     def _username_author_matches(self, query: str) -> list[DocumentRecord]:
         username = self._normalized_author_identity_query(query)
@@ -104,7 +105,7 @@ class HybridRetriever:
 
     def _normalized_author_identity_query(self, query: str) -> str | None:
         candidate = query.strip()
-        if not AUTHOR_QUERY_RE.fullmatch(candidate):
+        if not AUTHOR_IDENTITY_RE.fullmatch(candidate):
             return None
         return candidate.removeprefix("@").casefold()
 
