@@ -23,7 +23,7 @@ from tg_support.config import (
 )
 from tg_support.crawler import WebCrawler
 from tg_support.indexing.chunking import chunk_manual_notes, chunk_messages, chunk_pages
-from tg_support.indexing.embeddings import BgeM3EmbeddingModel
+from tg_support.indexing.embeddings import BgeEmbeddingModel
 from tg_support.indexing.hybrid import HybridRetriever, RetrievalDependencyError
 from tg_support.repository import RepositoryManager
 from tg_support.storage.db import SupportDatabase
@@ -66,7 +66,7 @@ def db_for_args(args: argparse.Namespace, initialize: bool = False) -> tuple[Sup
 
 
 def retriever_for_config(db: SupportDatabase, config: SupportConfig) -> HybridRetriever:
-    return HybridRetriever(db, embedding_model=BgeM3EmbeddingModel(config.embedding_model))
+    return HybridRetriever(db, embedding_model=BgeEmbeddingModel(config.embedding_model))
 
 
 def retrieval_error_payload(exc: RetrievalDependencyError) -> dict:

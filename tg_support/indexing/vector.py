@@ -3,13 +3,22 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Iterable
+from typing import Protocol
 
-from tg_support.indexing.embeddings import BgeM3EmbeddingModel, EmbeddingModel, RetrievalDependencyError, cosine
+from tg_support.indexing.embeddings import BgeEmbeddingModel, EmbeddingModel, RetrievalDependencyError
 from tg_support.storage.db import DocumentRecord, SupportDatabase
 
 
+class VectorStore(Protocol):
+    def rebuild(self, db: SupportDatabase, rows: Iterable[tuple[int, list[float]]]) -> None:
+        ...
+
+    def search(self, db: SupportDatabase, query_vector: list[float], limit: int = 10) -> list[tuple[DocumentRecord, float]]:
+        ...
+
+
 class SQLiteVecStore:
-    def __init__(self, dims: int = 1024):
+    def __init__(self, dims: int = 384):
         self.dims = dims
 
     def load(self, conn: sqlite3.Connection) -> None:
@@ -40,8 +49,9 @@ class SQLiteVecStore:
     def rebuild(self, db: SupportDatabase, rows: Iterable[tuple[int, list[float]]]) -> None:
         payload = [(document_id, json.dumps(vector)) for document_id, vector in rows]
         with db.connect() as conn:
-            self.initialize(conn)
-            conn.execute("DELETE FROM vec_documents")
+            self.load(conn)
+            conn.execute("DROP TABLE IF EXISTS vec_documents")
+            self.create_table(conn)
             conn.executemany("INSERT INTO vec_documents(rowid, embedding) VALUES (?, ?)", payload)
 
     def search(self, db: SupportDatabase, query_vector: list[float], limit: int = 10) -> list[tuple[DocumentRecord, float]]:
@@ -66,27 +76,10 @@ class SQLiteVecStore:
         return [(documents[int(row["document_id"])], float(row["distance"])) for row in rows if int(row["document_id"]) in documents]
 
 
-class InMemoryVectorStore:
-    def __init__(self):
-        self._vectors: dict[int, list[float]] = {}
-
-    def rebuild(self, _db: SupportDatabase, rows: Iterable[tuple[int, list[float]]]) -> None:
-        self._vectors = {document_id: vector for document_id, vector in rows}
-
-    def search(self, db: SupportDatabase, query_vector: list[float], limit: int = 10) -> list[tuple[DocumentRecord, float]]:
-        documents = db.documents_by_id(self._vectors.keys())
-        scored = [
-            (documents[document_id], cosine(query_vector, vector))
-            for document_id, vector in self._vectors.items()
-            if document_id in documents
-        ]
-        return [(document, score) for document, score in sorted(scored, key=lambda item: (-item[1], item[0].id))[:limit] if score > 0]
-
-
 class VectorSearcher:
-    def __init__(self, db: SupportDatabase, model: EmbeddingModel | None = None, store: SQLiteVecStore | InMemoryVectorStore | None = None):
+    def __init__(self, db: SupportDatabase, model: EmbeddingModel | None = None, store: VectorStore | None = None):
         self.db = db
-        self.model = model or BgeM3EmbeddingModel()
+        self.model = model or BgeEmbeddingModel()
         self.store = store or SQLiteVecStore()
 
     def rebuild(self, documents: list[DocumentRecord]) -> None:

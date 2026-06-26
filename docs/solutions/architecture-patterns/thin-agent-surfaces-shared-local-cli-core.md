@@ -74,7 +74,7 @@ For the SQLite Hybrid Search Index, keep three separate contracts explicit:
 
 - `documents` is the canonical retrieval projection for source-linked chunk text and metadata.
 - `fts_documents` is the SQLite FTS5 projection for exact product, policy, command, and error terms.
-- `vec_documents` is the sqlite-vec projection for 1024-dimensional `BAAI/bge-m3` semantic embeddings.
+- `vec_documents` is the sqlite-vec projection for 384-dimensional `BAAI/bge-small-en-v1.5` semantic embeddings.
 
 Those tables should be rebuilt together from the same source chunks. Do not accept arbitrary embedding models unless the storage schema and query path validate compatible dimensions; the sqlite-vec table shape is part of the schema contract. FTS tokenization should preserve the punctuation that matters to support search, including hyphenated and underscored product or policy names, so exact operational terms do not depend on vector recall.
 
@@ -111,7 +111,7 @@ The shared CLI/core boundary prevents divergence between agent surfaces. If Code
 
 The local persisted state model also fits the privacy and distribution requirements. Telegram sessions, support history, crawled pages, indexes, drafts, confirmation tokens, and post attempts are operator-owned local data. They should not be checked into the plugin, hidden in agent transcripts, or spread across separate integration-specific stores.
 
-Hybrid retrieval only improves support answers when both success and failure modes are trustworthy. FTS5 recovers exact product and policy terms, sqlite-vec broadens recall for natural-language phrasing, and BGE-M3 keeps embedding local. The surrounding guardrails matter just as much as the ranking path: stale indexes, missing runtime extras, unsupported dimensions, or swallowed model errors all produce plausible but incomplete evidence unless the CLI fails loudly.
+Hybrid retrieval only improves support answers when both success and failure modes are trustworthy. FTS5 recovers exact product and policy terms, sqlite-vec broadens recall for natural-language phrasing, and BGE Small keeps embedding local. The surrounding guardrails matter just as much as the ranking path: stale indexes, missing runtime extras, unsupported dimensions, or swallowed model errors all produce plausible but incomplete evidence unless the CLI fails loudly.
 
 The explicit posting boundary is the most important safety property. A support agent can be useful while still being allowed to reason only up to "here is the exact reply I propose." The deterministic CLI owns "this exact draft was confirmed for this exact target and was posted once." That distinction keeps agent creativity out of the external write path and gives tests a concrete behavior to assert.
 
@@ -175,7 +175,7 @@ Search reports the index as current because the max chunk id is unchanged after 
 That serves stale policy text while looking healthy. Freshness checks should compare indexed content signatures.
 
 ```text
-A different embedding model is accepted even though the vector table is fixed to BGE-M3 dimensions.
+A different embedding model is accepted even though the vector table is fixed to BGE Small dimensions.
 ```
 
 That moves an invalid configuration from setup time to query time. Reject it before indexing or searching.

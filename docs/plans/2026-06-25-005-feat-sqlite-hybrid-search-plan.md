@@ -10,7 +10,7 @@ deepened: 2026-06-25
 
 ## Summary
 
-Replace the prototype hash/vector and token-overlap retrieval path with the SQLite Hybrid Search Index. The implementation keeps source-linked Evidence Bundles and Manual Knowledge Note behavior while adding FTS5 exact-term recovery, sqlite-vec vector retrieval, and local `BAAI/bge-m3` embeddings.
+Replace the prototype hash/vector and token-overlap retrieval path with the SQLite Hybrid Search Index. The implementation keeps source-linked Evidence Bundles and Manual Knowledge Note behavior while adding FTS5 exact-term recovery, sqlite-vec vector retrieval, and local `BAAI/bge-small-en-v1.5` embeddings.
 
 ---
 
@@ -28,7 +28,7 @@ The first quality target is exact product and policy term recovery. The new inde
 
 - R1. The Local Core builds a `documents` projection for indexed chunks with source type, source ID, ordinal, text, metadata, and source freshness fields.
 - R2. The Local Core builds an FTS5 projection for BM25-style exact-term retrieval over indexed document text.
-- R3. The Local Core builds a sqlite-vec projection for local vector retrieval over `BAAI/bge-m3` dense embeddings.
+- R3. The Local Core builds a sqlite-vec projection for local vector retrieval over `BAAI/bge-small-en-v1.5` dense embeddings.
 - R4. Index run metadata records the embedding model, index version, source maximum chunk ID, and status needed for staleness checks.
 - R5. The new projections may replace the current `lexical_refs` and `vector_refs` projections without backwards-compatible index migration.
 
@@ -42,7 +42,7 @@ The first quality target is exact product and policy term recovery. The new inde
 
 **Local Operations**
 
-- R11. The default embedding model is `BAAI/bge-m3`.
+- R11. The default embedding model is `BAAI/bge-small-en-v1.5`.
 - R12. Missing embedding/vector dependencies produce actionable CLI errors instead of silent hash-vector fallback.
 - R13. Index rebuilds never delete source records for chats, users, messages, pages, Manual Knowledge Notes, drafts, confirmations, or post attempts.
 - R14. The core suite stays fast and local by using fakes at embedding and sqlite-vec adapter boundaries.
@@ -52,8 +52,8 @@ The first quality target is exact product and policy term recovery. The new inde
 ## Key Technical Decisions
 
 - KTD1. **SQLite remains the retrieval authority boundary.** FTS and vector indexes live in the same profile-local database as source metadata, matching the local-first architecture and avoiding a separate vector service.
-- KTD2. **Use adapter boundaries for optional runtime dependencies.** Wrap `BAAI/bge-m3` loading and sqlite-vec extension loading behind small adapters so tests can use fakes and CLI commands can report missing local capabilities cleanly.
-- KTD3. **Plan for BGE-M3's 1024-dimensional dense vectors.** The sqlite-vec table should be dimensioned for the committed model, with model identity stored in index metadata so a future model change forces rebuild instead of mixing incompatible vectors.
+- KTD2. **Use adapter boundaries for optional runtime dependencies.** Wrap `BAAI/bge-small-en-v1.5` loading and sqlite-vec extension loading behind small adapters so tests can use fakes and CLI commands can report missing local capabilities cleanly.
+- KTD3. **Plan for BGE Small's 384-dimensional dense vectors.** The sqlite-vec table should be dimensioned for the committed model, with model identity stored in index metadata so a future model change forces rebuild instead of mixing incompatible vectors.
 - KTD4. **Prefer FTS tokenizer preservation over stemming.** Product and policy terms often include hyphens, underscores, acronyms, or exact labels, so tokenization should preserve those characters where useful instead of optimizing first for broad stemming.
 - KTD5. **Keep FTS and vector scores source-specific before fusion.** FTS `bm25()` and vector distance have different score direction and scale, so ranking should normalize by rank positions rather than raw score arithmetic.
 - KTD6. **Treat sqlite-vec as a pre-v1 dependency risk.** Its docs label the API pre-v1, so the implementation should isolate SQL shapes and extension loading in one module.
@@ -67,7 +67,7 @@ flowchart TB
   SRC[Telegram pages manual notes] --> CHUNK[Source-linked chunks]
   CHUNK --> DOC[documents projection]
   DOC --> FTS[fts_documents FTS5]
-  DOC --> EMBED[BGE-M3 embedding adapter]
+  DOC --> EMBED[BGE Small embedding adapter]
   EMBED --> VEC[vec_documents sqlite-vec]
   QUERY[Search query] --> FTSQ[FTS search]
   QUERY --> QEMBED[Query embedding]
@@ -89,7 +89,7 @@ Source tables remain authoritative. The `documents`, `fts_documents`, and `vec_d
 ### In Scope
 
 - Replacing normal indexed retrieval with SQLite FTS5 plus sqlite-vec.
-- Setting `BAAI/bge-m3` as the configured default embedding model.
+- Setting `BAAI/bge-small-en-v1.5` as the configured default embedding model.
 - Preserving CLI search, draft-context, status readiness, Manual Knowledge Note, and conflict behavior.
 - Adding focused docs for local dependency requirements and index rebuild behavior.
 
@@ -111,7 +111,7 @@ Source tables remain authoritative. The `documents`, `fts_documents`, and `vec_d
 
 - **sqlite-vec extension loading:** Some local Python/SQLite builds do not allow loadable extensions. Mitigate with startup checks, structured CLI errors, and adapter-isolated extension loading.
 - **SQLite version drift:** sqlite-vec documentation recommends modern SQLite versions for some behavior. Mitigate by including the active `sqlite3.sqlite_version` in vector-loading diagnostics.
-- **Model runtime cost:** `BAAI/bge-m3` is heavier than the current hash fallback. Mitigate with optional dependencies, fake adapters in tests, and no model download in the core suite.
+- **Model runtime cost:** `BAAI/bge-small-en-v1.5` is heavier than the previous hash fallback. Mitigate with optional dependencies, fake adapters in tests, and no model download in the core suite.
 - **FTS query escaping:** User queries may contain punctuation that matters for product names but has FTS query syntax meaning. Mitigate with a dedicated query-construction helper and tests for punctuation-heavy product terms.
 - **Score direction mismatch:** FTS BM25 and vector distance have different score direction and scale. Mitigate by fusing rank positions rather than raw scores.
 
@@ -134,10 +134,10 @@ Source tables remain authoritative. The `documents`, `fts_documents`, and `vec_d
 - **Requirements:** R11, R12, R14
 - **Dependencies:** None
 - **Files:** `pyproject.toml`, `tg_support/config.py`, `scripts/tg-support`, `tests/test_config.py`, `tests/test_cli_setup.py`, `docs/setup.md`, `README.md`
-- **Approach:** Add optional extras for embedding/vector runtime packages and update the helper-managed runtime to install the retrieval extra for normal operator use. Change defaults from `local-hash-v1` and fallback vector mode to the committed SQLite/BGE-M3 posture.
+- **Approach:** Add optional extras for embedding/vector runtime packages and update the helper-managed runtime to install the retrieval extra for normal operator use. Change defaults from `prototype hash embeddings` and fallback vector mode to the committed SQLite/BGE Small posture.
 - **Patterns to follow:** `telegram` and `render` extras keep optional integrations out of the fast core install; setup config already persists profile-local model settings.
 - **Test scenarios:**
-  - Setup without an explicit embedding model persists `BAAI/bge-m3`.
+  - Setup without an explicit embedding model persists `BAAI/bge-small-en-v1.5`.
   - Config round-trip preserves embedding model and vector mode.
   - The helper-managed runtime includes retrieval dependencies for operator indexing.
   - Documentation describes dependency installation and missing-dependency behavior without requiring real Telegram or Playwright.
@@ -161,11 +161,11 @@ Source tables remain authoritative. The `documents`, `fts_documents`, and `vec_d
 
 ### U3. Embedding and sqlite-vec adapters
 
-- **Goal:** Provide local BGE-M3 embedding and sqlite-vec integration behind testable adapters.
+- **Goal:** Provide local BGE Small embedding and sqlite-vec integration behind testable adapters.
 - **Requirements:** R3, R11, R12, R14
 - **Dependencies:** U1, U2
 - **Files:** `tg_support/indexing/embeddings.py`, `tg_support/indexing/vector.py`, `tests/test_hybrid_retrieval.py`, `tests/test_cli_setup.py`
-- **Approach:** Replace the hash model as the normal runtime path with a BGE-M3 adapter that can be faked in tests. Add a sqlite-vec loader/serializer path that stores float32 embeddings and reports missing extension support as structured CLI errors.
+- **Approach:** Replace the hash model as the normal runtime path with a BGE Small adapter that can be faked in tests. Add a sqlite-vec loader/serializer path that stores float32 embeddings and reports missing extension support as structured CLI errors.
 - **Patterns to follow:** Existing tests use fakes at Telegram and crawler boundaries; retrieval tests can inject fake embeddings to avoid model downloads.
 - **Test scenarios:**
   - A fake embedding model produces deterministic vectors accepted by the vector adapter.
@@ -173,7 +173,7 @@ Source tables remain authoritative. The `documents`, `fts_documents`, and `vec_d
   - Missing sqlite-vec extension support returns an actionable indexing error with SQLite version context.
   - Runtime code no longer silently falls back to hash embeddings for normal index builds.
   - sqlite-vec vector table creation is idempotent after the extension is loaded.
-- **Verification:** Unit tests cover adapter success and failure without downloading `BAAI/bge-m3`.
+- **Verification:** Unit tests cover adapter success and failure without downloading `BAAI/bge-small-en-v1.5`.
 
 ### U4. Index build replacement
 
@@ -265,4 +265,4 @@ Source tables remain authoritative. The `documents`, `fts_documents`, and `vec_d
 - Institutional learning: `docs/solutions/architecture-patterns/thin-agent-surfaces-shared-local-cli-core.md`
 - SQLite FTS5 documentation: `https://www.sqlite.org/fts5.html`
 - sqlite-vec documentation: `https://alexgarcia.xyz/sqlite-vec/`
-- `BAAI/bge-m3` model card: `https://huggingface.co/BAAI/bge-m3`
+- `BAAI/bge-small-en-v1.5` model card: `https://huggingface.co/BAAI/bge-small-en-v1.5`

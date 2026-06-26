@@ -10,7 +10,7 @@ from urllib.parse import urlparse, urlunparse
 
 
 DEFAULT_PROFILE = "default"
-DEFAULT_EMBEDDING_MODEL = "BAAI/bge-m3"
+DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 DEFAULT_VECTOR_MODE = "sqlite-vec"
 DEFAULT_BASE_DIR = Path(os.environ.get("TG_SUPPORT_HOME", Path.home() / ".tg-support"))
 

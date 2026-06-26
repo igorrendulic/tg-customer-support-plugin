@@ -19,7 +19,9 @@ That installs the Codex workflow. After that, open Codex in the workspace where 
 Use the telegram-support skill to set up profile default for @my-support-chat with seed https://example.com/blog.
 ```
 
-The first time the workflow runs the bundled `scripts/tg-support` helper, it creates its own runtime environment, installs the Telegram, browser-rendering, and retrieval dependencies, and installs Chromium for Playwright. Retrieval uses SQLite FTS5, sqlite-vec, and local `BAAI/bge-m3` embeddings. The first index build may need to download or load the BGE-M3 model through `sentence-transformers`; after that, search runs against the local profile index. Then ask Codex to log in, sync Telegram history, crawl the configured seed, and build the local index:
+The first time the workflow runs the bundled `scripts/tg-support` helper, it creates its own runtime environment, installs the Telegram, browser-rendering, and retrieval dependencies, and installs Chromium for Playwright. Retrieval uses SQLite FTS5, sqlite-vec, and local `BAAI/bge-small-en-v1.5` embeddings. The first index build may need to download or load the BGE Small model through `sentence-transformers`; after that, search runs against the local profile index.
+
+Then ask Codex to log in, sync Telegram history, crawl the configured seed, and build the local index:
 
 ```text
 Use the telegram-support skill to log in and build the local corpus for profile default.
@@ -98,7 +100,7 @@ scripts/tg-support --profile default index
 scripts/tg-support --profile default status
 ```
 
-`index` creates source-linked documents, an FTS5 exact-term index, and a sqlite-vec vector index. If the retrieval dependencies or local SQLite extension loading are not available, the command returns JSON with `ok: false`, the SQLite version, and `next_action` instead of silently falling back to weaker search.
+`index` creates source-linked documents, an FTS5 exact-term index, and a 384-dimensional sqlite-vec vector index for `BAAI/bge-small-en-v1.5`. If the retrieval dependencies, embedding model, or local SQLite extension loading are not available, the command returns JSON with `ok: false`, the SQLite version when relevant, and `next_action` instead of silently falling back to weaker search.
 
 Ask questions or prepare a reply draft:
 
@@ -140,6 +142,8 @@ That profile directory contains the profile config, optional repository checkout
 
 Set `TG_SUPPORT_HOME` to move profile data elsewhere.
 
+Existing local profiles created with an older embedding model must be recreated or edited before use. The CLI intentionally rejects unsupported `embedding_model` values instead of mixing incompatible vector dimensions in the same profile.
+
 ## Codex And Claude
 
 The Codex skill lives in `skills/telegram-support/`. It uses the same `scripts/tg-support` commands as the CLI examples above and treats JSON CLI output as the source of truth for evidence, conflicts, draft IDs, and confirmation tokens.
@@ -148,9 +152,9 @@ Claude companion guidance is in `agents/claude.md` and `docs/claude-usage.md`. C
 
 ## Why This Shape
 
-The project follows the same practical README shape as tools like CLI Printing Press: start with what the tool is, install both the agent-facing surface and the binary/core, show the workflow, then explain the non-obvious architecture. Here, the non-obvious part is the safety boundary: agent prompts can retrieve evidence and draft text, but only deterministic CLI code can consume a confirmation token and write to Telegram.
+The key safety boundary is deliberate: agent prompts can retrieve evidence and draft text, but only deterministic CLI code can consume a confirmation token and write to Telegram.
 
-SQLite is the durable local metadata store. The SQLite Hybrid Search Index is a rebuildable projection linked back to Telegram messages, crawled pages, and Manual Knowledge Notes: FTS5 recovers exact product and policy terms, sqlite-vec handles vector candidates, and answers cite source records instead of relying on agent memory.
+SQLite is the durable local metadata store. The SQLite Hybrid Search Index is a rebuildable projection linked back to Telegram messages, crawled pages, and Manual Knowledge Notes: FTS5 recovers exact product and policy terms, sqlite-vec handles vector candidates with local `BAAI/bge-small-en-v1.5` embeddings, and answers cite source records instead of relying on agent memory.
 
 ## Development
 
@@ -165,6 +169,12 @@ Run the test suite:
 
 ```bash
 .venv/bin/pytest
+```
+
+Run lint checks:
+
+```bash
+uv run --with ruff ruff check .
 ```
 
 Useful project files:
