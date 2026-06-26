@@ -19,7 +19,7 @@ That installs the Codex workflow. After that, open Codex in the workspace where 
 Use the telegram-support skill to set up profile default for @my-support-chat with seed https://example.com/blog.
 ```
 
-The first time the workflow runs the bundled `scripts/tg-support` helper, it creates its own runtime environment, installs the Telegram, browser-rendering, and retrieval dependencies, and installs Chromium for Playwright. Retrieval uses SQLite FTS5, sqlite-vec, and local `BAAI/bge-m3` embeddings. Then ask Codex to log in, sync Telegram history, crawl the configured seed, and build the local index:
+The first time the workflow runs the bundled `scripts/tg-support` helper, it creates its own runtime environment, installs the Telegram, browser-rendering, and retrieval dependencies, and installs Chromium for Playwright. Retrieval uses SQLite FTS5, sqlite-vec, and local `BAAI/bge-m3` embeddings. The first index build may need to download or load the BGE-M3 model through `sentence-transformers`; after that, search runs against the local profile index. Then ask Codex to log in, sync Telegram history, crawl the configured seed, and build the local index:
 
 ```text
 Use the telegram-support skill to log in and build the local corpus for profile default.
@@ -52,16 +52,16 @@ The package also exposes a `tg-support` console script inside that auto-created 
 
 ### Development Install
 
-For local development, clone the repo and install the package with dev dependencies:
+For local development, clone the repo and install the package with dev and retrieval dependencies:
 
 ```bash
 git clone <repo-url>
 cd tg-support-plugin
 python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"
+.venv/bin/pip install -e ".[retrieval,dev]"
 ```
 
-Add optional adapters when you need them:
+Add Telegram and browser-rendering adapters when you need real Telegram login or Playwright crawling:
 
 ```bash
 .venv/bin/pip install -e ".[telegram,render,retrieval,dev]"
@@ -97,6 +97,8 @@ scripts/tg-support --profile default crawl
 scripts/tg-support --profile default index
 scripts/tg-support --profile default status
 ```
+
+`index` creates source-linked documents, an FTS5 exact-term index, and a sqlite-vec vector index. If the retrieval dependencies or local SQLite extension loading are not available, the command returns JSON with `ok: false`, the SQLite version, and `next_action` instead of silently falling back to weaker search.
 
 Ask questions or prepare a reply draft:
 
@@ -156,7 +158,7 @@ Install dev dependencies:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"
+.venv/bin/pip install -e ".[retrieval,dev]"
 ```
 
 Run the test suite:
