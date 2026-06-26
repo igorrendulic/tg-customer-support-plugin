@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import pytest
 
+from tg_support.indexing.embeddings import HashEmbeddingModel
+from tg_support.indexing.hybrid import HybridRetriever
+from tg_support.indexing.vector import InMemoryVectorStore
 from tg_support.storage.db import SupportDatabase
 
 
@@ -46,3 +49,16 @@ def seed_messages(db):
         },
     )
     return chat_id
+
+
+def make_test_retriever(db: SupportDatabase) -> HybridRetriever:
+    return HybridRetriever(db, embedding_model=HashEmbeddingModel(), vector_store=InMemoryVectorStore())
+
+
+def patch_test_retriever(monkeypatch) -> None:
+    class TestHybridRetriever(HybridRetriever):
+        def __init__(self, db, *args, **kwargs):
+            super().__init__(db, embedding_model=HashEmbeddingModel(), vector_store=InMemoryVectorStore())
+
+    monkeypatch.setattr("tg_support.cli.HybridRetriever", TestHybridRetriever)
+    monkeypatch.setattr("tg_support.support.context.HybridRetriever", TestHybridRetriever)

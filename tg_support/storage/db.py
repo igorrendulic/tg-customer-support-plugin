@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from collections.abc import Iterable
@@ -19,6 +20,18 @@ class ChunkRecord:
     ordinal: int
     text: str
     metadata: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class DocumentRecord:
+    id: int
+    chunk_id: int
+    source_type: str
+    source_id: int
+    ordinal: int
+    text: str
+    metadata: dict[str, Any]
+    source_updated_at: str | None
 
 
 @dataclass(frozen=True)
@@ -55,6 +68,7 @@ class SupportDatabase:
         with self.connect() as conn:
             conn.executescript(SCHEMA_SQL)
             self._migrate_to_v2(conn)
+            self._migrate_to_v3(conn)
             conn.execute(
                 "INSERT OR IGNORE INTO schema_version(version) VALUES (?)",
                 (CURRENT_SCHEMA_VERSION,),
@@ -96,20 +110,42 @@ class SupportDatabase:
             """
         )
         conn.execute("DROP TABLE chunks_old")
+
+    def _migrate_to_v3(self, conn: sqlite3.Connection) -> None:
+        version_row = conn.execute("SELECT COALESCE(MAX(version), 0) AS version FROM schema_version").fetchone()
+        version = 0 if version_row is None else int(version_row["version"])
+        chunk_info = conn.execute("PRAGMA table_info(chunks)").fetchall()
+        if not chunk_info:
+            return
+        index_run_columns = {row["name"] for row in conn.execute("PRAGMA table_info(index_runs)").fetchall()}
+        if "source_signature" not in index_run_columns:
+            conn.execute("ALTER TABLE index_runs ADD COLUMN source_signature TEXT NOT NULL DEFAULT ''")
+        if version >= 3:
+            return
+        conn.execute("DROP TABLE IF EXISTS fts_documents")
+        conn.execute("DROP TABLE IF EXISTS documents")
         conn.execute(
             """
-            CREATE TABLE lexical_refs (
-              chunk_id INTEGER PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
-              terms_json TEXT NOT NULL
+            CREATE TABLE documents (
+              id INTEGER PRIMARY KEY,
+              chunk_id INTEGER NOT NULL UNIQUE REFERENCES chunks(id) ON DELETE CASCADE,
+              source_type TEXT NOT NULL,
+              source_id INTEGER NOT NULL,
+              ordinal INTEGER NOT NULL,
+              text TEXT NOT NULL,
+              metadata_json TEXT NOT NULL DEFAULT '{}',
+              source_updated_at TEXT,
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
         conn.execute(
             """
-            CREATE TABLE vector_refs (
-              chunk_id INTEGER PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
-              embedding_model TEXT NOT NULL,
-              vector_json TEXT NOT NULL
+            CREATE VIRTUAL TABLE IF NOT EXISTS fts_documents USING fts5(
+              text,
+              content='documents',
+              content_rowid='id',
+              tokenize = "unicode61 tokenchars '-_'"
             )
             """
         )
@@ -283,7 +319,19 @@ class SupportDatabase:
         ]
 
     def count(self, table: str) -> int:
-        if table not in {"chats", "users", "messages", "pages", "manual_notes", "chunks", "index_runs", "drafts", "confirmations", "post_attempts"}:
+        if table not in {
+            "chats",
+            "users",
+            "messages",
+            "pages",
+            "manual_notes",
+            "chunks",
+            "documents",
+            "index_runs",
+            "drafts",
+            "confirmations",
+            "post_attempts",
+        }:
             raise ValueError("Unsupported table")
         with self.connect() as conn:
             return int(conn.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()["count"])
@@ -292,12 +340,19 @@ class SupportDatabase:
         with self.connect() as conn:
             return int(conn.execute("SELECT COALESCE(MAX(id), 0) AS max_id FROM chunks").fetchone()["max_id"])
 
+    def chunk_signature(self) -> str:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT id, source_type, source_id, ordinal, text, metadata_json FROM chunks ORDER BY id").fetchall()
+        return self._chunk_signature_from_rows(rows)
+
     def record_index_run(self, embedding_model: str, index_version: str, status: str = "ok") -> int:
         with self.connect() as conn:
-            max_chunk = conn.execute("SELECT COALESCE(MAX(id), 0) AS max_id FROM chunks").fetchone()["max_id"]
+            rows = conn.execute("SELECT id, source_type, source_id, ordinal, text, metadata_json FROM chunks ORDER BY id").fetchall()
+            max_chunk = max((int(row["id"]) for row in rows), default=0)
+            source_signature = self._chunk_signature_from_rows(rows)
             cur = conn.execute(
-                "INSERT INTO index_runs(embedding_model, index_version, source_max_chunk_id, status) VALUES (?, ?, ?, ?)",
-                (embedding_model, index_version, max_chunk, status),
+                "INSERT INTO index_runs(embedding_model, index_version, source_max_chunk_id, source_signature, status) VALUES (?, ?, ?, ?, ?)",
+                (embedding_model, index_version, max_chunk, source_signature, status),
             )
             return int(cur.lastrowid)
 
@@ -308,27 +363,102 @@ class SupportDatabase:
                 (embedding_model,),
             ).fetchone()
 
-    def save_lexical_terms(self, chunk_id: int, terms: Iterable[str]) -> None:
-        with self.connect() as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO lexical_refs(chunk_id, terms_json) VALUES (?, ?)",
-                (chunk_id, json.dumps(list(terms), sort_keys=True)),
+    def rebuild_documents(self) -> list[DocumentRecord]:
+        chunks = self.chunks()
+        payload = [
+            (
+                chunk.id,
+                chunk.id,
+                chunk.source_type,
+                chunk.source_id,
+                chunk.ordinal,
+                chunk.text,
+                json.dumps(chunk.metadata, sort_keys=True),
+                self._source_updated_at(chunk),
             )
+            for chunk in chunks
+        ]
+        with self.connect() as conn:
+            conn.execute("DELETE FROM fts_documents")
+            conn.execute("DELETE FROM documents")
+            if payload:
+                conn.executemany(
+                    """
+                    INSERT INTO documents(id, chunk_id, source_type, source_id, ordinal, text, metadata_json, source_updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    payload,
+                )
+                conn.executemany("INSERT INTO fts_documents(rowid, text) VALUES (?, ?)", [(row[0], row[5]) for row in payload])
+        return self.documents()
 
-    def save_vector(self, chunk_id: int, embedding_model: str, vector: list[float]) -> None:
+    def documents(self) -> list[DocumentRecord]:
         with self.connect() as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO vector_refs(chunk_id, embedding_model, vector_json) VALUES (?, ?, ?)",
-                (chunk_id, embedding_model, json.dumps(vector)),
-            )
+            rows = conn.execute("SELECT * FROM documents ORDER BY id").fetchall()
+        return [self._document_from_row(row) for row in rows]
 
-    def save_index_entries(self, lexical_rows: Iterable[tuple[int, Iterable[str]]], vector_rows: Iterable[tuple[int, str, list[float]]]) -> None:
+    def documents_by_id(self, ids: Iterable[int]) -> dict[int, DocumentRecord]:
+        id_list = list(dict.fromkeys(ids))
+        if not id_list:
+            return {}
+        placeholders = ",".join("?" for _ in id_list)
         with self.connect() as conn:
-            conn.executemany(
-                "INSERT OR REPLACE INTO lexical_refs(chunk_id, terms_json) VALUES (?, ?)",
-                [(chunk_id, json.dumps(list(terms), sort_keys=True)) for chunk_id, terms in lexical_rows],
+            rows = conn.execute(f"SELECT * FROM documents WHERE id IN ({placeholders})", id_list).fetchall()
+        return {row["id"]: self._document_from_row(row) for row in rows}
+
+    def search_fts(self, query: str, limit: int) -> list[tuple[DocumentRecord, float]]:
+        if not query:
+            return []
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT d.*, bm25(fts_documents) AS score
+                FROM fts_documents JOIN documents d ON d.id = fts_documents.rowid
+                WHERE fts_documents MATCH ?
+                ORDER BY score ASC, d.id ASC
+                LIMIT ?
+                """,
+                (query, limit),
+            ).fetchall()
+        return [(self._document_from_row(row), float(row["score"])) for row in rows]
+
+    def _document_from_row(self, row: sqlite3.Row) -> DocumentRecord:
+        return DocumentRecord(
+            id=int(row["id"]),
+            chunk_id=int(row["chunk_id"]),
+            source_type=row["source_type"],
+            source_id=int(row["source_id"]),
+            ordinal=int(row["ordinal"]),
+            text=row["text"],
+            metadata=json.loads(row["metadata_json"]),
+            source_updated_at=row["source_updated_at"],
+        )
+
+    def _source_updated_at(self, chunk: ChunkRecord) -> str | None:
+        if chunk.source_type == "telegram":
+            return chunk.metadata.get("sent_at")
+        if chunk.source_type == "web":
+            return chunk.metadata.get("fetched_at")
+        if chunk.source_type == "manual":
+            return chunk.metadata.get("created_at") or chunk.metadata.get("effective_date")
+        return None
+
+    def _chunk_signature_from_rows(self, rows: Iterable[sqlite3.Row]) -> str:
+        digest = hashlib.sha256()
+        for row in rows:
+            digest.update(
+                json.dumps(
+                    {
+                        "id": int(row["id"]),
+                        "source_type": row["source_type"],
+                        "source_id": int(row["source_id"]),
+                        "ordinal": int(row["ordinal"]),
+                        "text": row["text"],
+                        "metadata_json": row["metadata_json"],
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
             )
-            conn.executemany(
-                "INSERT OR REPLACE INTO vector_refs(chunk_id, embedding_model, vector_json) VALUES (?, ?, ?)",
-                [(chunk_id, model, json.dumps(vector)) for chunk_id, model, vector in vector_rows],
-            )
+            digest.update(b"\n")
+        return digest.hexdigest()

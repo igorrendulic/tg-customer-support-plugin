@@ -36,11 +36,19 @@ def message_context(db: SupportDatabase, message_id: int, window: int = 3) -> li
     return [dict(row) for row in rows]
 
 
-def draft_context(db: SupportDatabase, query: str, username: str | None = None, message_id: int | None = None, limit: int = 6) -> dict:
+def draft_context(
+    db: SupportDatabase,
+    query: str,
+    username: str | None = None,
+    message_id: int | None = None,
+    limit: int = 6,
+    retriever: HybridRetriever | None = None,
+) -> dict:
     target_history = user_history(db, username, limit=limit) if username else []
     thread = message_context(db, message_id) if message_id is not None else []
     search_query = query or " ".join(item["text"] for item in (thread or target_history))
-    search = HybridRetriever(db).search_with_conflicts(search_query, limit=limit)
+    retriever = retriever or HybridRetriever(db)
+    search = retriever.search_with_conflicts(search_query, limit=limit)
     suggestion = None
     if username and not target_history:
         suggestion = "No local history for this user. Run sync, search by message ID, or broaden the query."

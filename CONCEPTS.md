@@ -28,6 +28,9 @@ A Support Operator-confirmed local corpus entry for dated support facts, policy 
 ### Repository Evidence
 Read-only, profile-local evidence gathered from a configured GitHub repository and branch during product-behavior or debugging support questions. Repository Evidence from the configured production branch outranks Manual Knowledge Notes, Telegram evidence, and web evidence when sources disagree.
 
+### SQLite Hybrid Search Index
+The Support Profile-local retrieval projection that combines SQLite FTS5 exact-term search, sqlite-vec vector search, and local `BAAI/bge-m3` embeddings over source-linked indexed documents.
+
 ### Conflict Check
 The retrieval-time safety step that compares an applicable Manual Knowledge Note against indexed Telegram or web evidence, re-queries fresher evidence when needed, and asks the Support Operator before resolving contested support truth.
 

@@ -38,6 +38,15 @@ def test_cancelled_draft_does_not_send(db):
     assert gateway.calls == []
 
 
+def test_confirmation_tokens_are_cli_safe(db):
+    draft = create_draft(db, "support", "hello", {}, target_message_id=10)
+
+    assert draft["post_token"].startswith("post_")
+    assert draft["cancel_token"].startswith("cancel_")
+    assert not draft["post_token"].startswith("-")
+    assert not draft["cancel_token"].startswith("-")
+
+
 def test_confirmed_draft_sends_once(db):
     gateway = SendGateway()
     draft = create_draft(db, "support", "hello", {}, target_message_id=10)

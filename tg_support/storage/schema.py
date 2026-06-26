@@ -1,4 +1,4 @@
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 SCHEMA_SQL = """
 PRAGMA foreign_keys = ON;
@@ -73,19 +73,28 @@ CREATE TABLE IF NOT EXISTS index_runs (
   embedding_model TEXT NOT NULL,
   index_version TEXT NOT NULL,
   source_max_chunk_id INTEGER NOT NULL,
+  source_signature TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS lexical_refs (
-  chunk_id INTEGER PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
-  terms_json TEXT NOT NULL
+CREATE TABLE IF NOT EXISTS documents (
+  id INTEGER PRIMARY KEY,
+  chunk_id INTEGER NOT NULL UNIQUE REFERENCES chunks(id) ON DELETE CASCADE,
+  source_type TEXT NOT NULL,
+  source_id INTEGER NOT NULL,
+  ordinal INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  source_updated_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS vector_refs (
-  chunk_id INTEGER PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
-  embedding_model TEXT NOT NULL,
-  vector_json TEXT NOT NULL
+CREATE VIRTUAL TABLE IF NOT EXISTS fts_documents USING fts5(
+  text,
+  content='documents',
+  content_rowid='id',
+  tokenize = "unicode61 tokenchars '-_'"
 );
 
 CREATE TABLE IF NOT EXISTS drafts (

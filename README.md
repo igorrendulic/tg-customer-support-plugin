@@ -19,7 +19,7 @@ That installs the Codex workflow. After that, open Codex in the workspace where 
 Use the telegram-support skill to set up profile default for @my-support-chat with seed https://example.com/blog.
 ```
 
-The first time the workflow runs the bundled `scripts/tg-support` helper, it creates its own runtime environment, installs the Telegram and browser-rendering dependencies, and installs Chromium for Playwright. Then ask Codex to log in, sync Telegram history, crawl the configured seed, and build the local index:
+The first time the workflow runs the bundled `scripts/tg-support` helper, it creates its own runtime environment, installs the Telegram, browser-rendering, and retrieval dependencies, and installs Chromium for Playwright. Retrieval uses SQLite FTS5, sqlite-vec, and local `BAAI/bge-m3` embeddings. Then ask Codex to log in, sync Telegram history, crawl the configured seed, and build the local index:
 
 ```text
 Use the telegram-support skill to log in and build the local corpus for profile default.
@@ -64,7 +64,7 @@ python3 -m venv .venv
 Add optional adapters when you need them:
 
 ```bash
-.venv/bin/pip install -e ".[telegram,render,dev]"
+.venv/bin/pip install -e ".[telegram,render,retrieval,dev]"
 ```
 
 ## Use
@@ -148,7 +148,7 @@ Claude companion guidance is in `agents/claude.md` and `docs/claude-usage.md`. C
 
 The project follows the same practical README shape as tools like CLI Printing Press: start with what the tool is, install both the agent-facing surface and the binary/core, show the workflow, then explain the non-obvious architecture. Here, the non-obvious part is the safety boundary: agent prompts can retrieve evidence and draft text, but only deterministic CLI code can consume a confirmation token and write to Telegram.
 
-SQLite is the durable local metadata store. Lexical and vector indexes are rebuildable projections linked back to Telegram messages, crawled pages, and Manual Knowledge Notes, so answers can cite source records instead of relying on agent memory.
+SQLite is the durable local metadata store. The SQLite Hybrid Search Index is a rebuildable projection linked back to Telegram messages, crawled pages, and Manual Knowledge Notes: FTS5 recovers exact product and policy terms, sqlite-vec handles vector candidates, and answers cite source records instead of relying on agent memory.
 
 ## Development
 

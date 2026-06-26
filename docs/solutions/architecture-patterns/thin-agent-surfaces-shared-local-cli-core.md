@@ -13,6 +13,7 @@ applies_when:
 related_components:
   - tooling
   - service_object
+  - database
   - development_workflow
 tags:
   - telegram-support
@@ -22,6 +23,9 @@ tags:
   - confirmation-gates
   - posting-safety
   - retrieval
+  - sqlite-fts5
+  - sqlite-vec
+  - bge-m3
 ---
 
 # Thin agent surfaces over a shared local CLI core
@@ -62,9 +66,21 @@ The CLI prints JSON, and the skills treat that JSON as the source of truth for p
 
 Persist local state in the profile directory and SQLite, not in plugin source files or agent memory. `tg_support.config` resolves a profile under `TG_SUPPORT_HOME` or `~/.tg-support/profiles/<profile>`, with `support.sqlite3` and `telegram.session` as profile-local artifacts. `tests/test_config.py::test_config_stores_profile_outside_source_tree` and `tests/test_cli_setup.py::test_cli_setup_stores_normalized_config` prove setup normalizes a Telegram chat identifier and writes profile config through the local profile path rather than hard-coding a project-specific location.
 
-Use SQLite as the durable metadata source and treat indexes as rebuildable projections. `tg_support/storage/schema.py` owns tables for chats, users, messages, pages, chunks, index runs, lexical refs, vector refs, drafts, confirmations, and post attempts. Retrieval can be rebuilt from chunks and index metadata, but source records must remain traceable. `tests/test_storage.py::test_chunk_records_trace_to_sources` proves chunk records point back to Telegram or web sources, and `tests/test_storage.py::test_index_run_does_not_delete_source_records` proves recording an index run does not delete source messages.
+Use SQLite as the durable metadata source and treat indexes as rebuildable projections. `tg_support/storage/schema.py` owns tables for chats, users, messages, pages, chunks, indexed documents, index runs, drafts, confirmations, and post attempts. Retrieval can be rebuilt from source chunks and index metadata, but source records must remain traceable. `tests/test_storage.py::test_chunk_records_trace_to_sources` proves chunk records point back to Telegram or web sources, and `tests/test_storage.py::test_index_run_does_not_delete_source_records` proves recording an index run does not delete source messages.
 
 Keep retrieval local and source-linked. `tg_support/indexing/chunking.py` chunks web pages with URL/title metadata and Telegram messages with neighboring conversation context. `tg_support/indexing/hybrid.py` combines lexical and vector results with reciprocal rank fusion and returns chunk/source identifiers, text, scores, and metadata. `tests/test_chunking.py::test_telegram_chunks_include_neighboring_context`, `tests/test_hybrid_retrieval.py::test_hybrid_search_returns_source_references`, and `tests/test_hybrid_retrieval.py::test_rrf_favors_items_in_both_result_sets` cover the behavior that lets agents cite evidence without guessing provenance.
+
+For the SQLite Hybrid Search Index, keep three separate contracts explicit:
+
+- `documents` is the canonical retrieval projection for source-linked chunk text and metadata.
+- `fts_documents` is the SQLite FTS5 projection for exact product, policy, command, and error terms.
+- `vec_documents` is the sqlite-vec projection for 1024-dimensional `BAAI/bge-m3` semantic embeddings.
+
+Those tables should be rebuilt together from the same source chunks. Do not accept arbitrary embedding models unless the storage schema and query path validate compatible dimensions; the sqlite-vec table shape is part of the schema contract. FTS tokenization should preserve the punctuation that matters to support search, including hyphenated and underscored product or policy names, so exact operational terms do not depend on vector recall.
+
+Index freshness needs a content-level signature, not only a high-water mark. A max chunk id catches appended content, but it misses edited source text, metadata corrections, and re-chunking that reuses existing identities. Store a deterministic signature of the indexed chunk payload in `index_runs`, compare it before search, and fail with an actionable rebuild response when it drifts.
+
+Treat retrieval setup failures as structured CLI errors. Missing sqlite-vec support, embedding model load failures, encode failures, unsupported embedding configuration, and unbuilt indexes should reach `search` and `draft-context` as JSON with a clear next action and useful diagnostics such as the SQLite version. Returning empty search results for an unusable index hides setup bugs and leads agents to answer without evidence.
 
 Make posting a separate confirmation-gated state transition. The reply workflow should be:
 
@@ -85,6 +101,8 @@ Preserve these regression anchors when changing the posting path:
 
 Session history also captured two concrete guardrails that should stay with this architecture: setup validation should return machine-readable JSON instead of letting argparse exit early, and missing Telegram gateway errors must not consume a post token. (session history)
 
+Confirmation tokens are CLI inputs, so make them parser-safe. Random tokens can accidentally begin with option-looking text; action-prefixed tokens such as `post_...` and `cancel_...` avoid argparse ambiguity while still preserving the explicit confirmation boundary.
+
 The skill and companion docs should stay declarative and thin. `skills/telegram-support/SKILL.md` says never post from agent reasoning and requires evidence, target display, explicit `post`, and a successful CLI confirmation. `skills/telegram-support/references/reply-workflow.md` describes the operator-facing steps. `agents/claude.md` explicitly says the Claude surface uses the same local CLI and does not duplicate retrieval or posting logic.
 
 ## Why This Matters
@@ -92,6 +110,8 @@ The skill and companion docs should stay declarative and thin. `skills/telegram-
 The shared CLI/core boundary prevents divergence between agent surfaces. If Codex and Claude each learned their own way to search, draft, or post, safety and retrieval quality would depend on prompt wording instead of product behavior. By routing both surfaces through `scripts/tg-support`, fixes to ingestion, indexing, evidence formatting, drafts, and confirmation immediately apply to every supported agent.
 
 The local persisted state model also fits the privacy and distribution requirements. Telegram sessions, support history, crawled pages, indexes, drafts, confirmation tokens, and post attempts are operator-owned local data. They should not be checked into the plugin, hidden in agent transcripts, or spread across separate integration-specific stores.
+
+Hybrid retrieval only improves support answers when both success and failure modes are trustworthy. FTS5 recovers exact product and policy terms, sqlite-vec broadens recall for natural-language phrasing, and BGE-M3 keeps embedding local. The surrounding guardrails matter just as much as the ranking path: stale indexes, missing runtime extras, unsupported dimensions, or swallowed model errors all produce plausible but incomplete evidence unless the CLI fails loudly.
 
 The explicit posting boundary is the most important safety property. A support agent can be useful while still being allowed to reason only up to "here is the exact reply I propose." The deterministic CLI owns "this exact draft was confirmed for this exact target and was posted once." That distinction keeps agent creativity out of the external write path and gives tests a concrete behavior to assert.
 
@@ -104,6 +124,8 @@ Use the shared CLI/core approach when:
 - The integration must support both Codex and Claude without assuming identical plugin mechanics.
 - The system needs local credentials or private local data, such as Telegram sessions and support history.
 - Retrieval results must include source metadata that an agent can cite.
+- Exact product, policy, command, or error terms must be recovered alongside semantic matches.
+- Local embeddings or SQLite extensions may fail on user machines and need actionable CLI diagnostics.
 - The final action changes an external system and must be gated by explicit operator confirmation.
 - Tests need to prove safety properties independently of agent prompt behavior.
 
@@ -136,7 +158,27 @@ That bypasses the persisted draft, skips the confirmation token, loses post-atte
 
 The current storage schema shows how to preserve auditability without overcomplicating the first version. `drafts` stores the target, exact message text, evidence, and status. `confirmations` stores action-specific tokens with `consumed_at`. `post_attempts` records posted, cancelled, or failed outcomes and the Telegram message ID or error. That is enough to answer "what did we show, what did the operator choose, and what happened?"
 
-The crawler/retrieval path follows the same local-source principle. `crawl` stores web pages in `pages`; chunking creates web chunks with URL/title metadata and Telegram chunks with chat/message/author/timestamp metadata; `index` writes lexical/vector refs and an `index_runs` row. Agent-facing answers should cite those returned references, not memory or hidden assumptions.
+The crawler/retrieval path follows the same local-source principle. `crawl` stores web pages in `pages`; chunking creates web chunks with URL/title metadata and Telegram chunks with chat/message/author/timestamp metadata; `index` writes `documents`, FTS5 rows, sqlite-vec rows, and an `index_runs` row with the indexed source signature. Agent-facing answers should cite those returned references, not memory or hidden assumptions.
+
+The SQLite hybrid index also has a few anti-patterns worth testing directly:
+
+```text
+Search returns no results because sqlite-vec failed to load, but the CLI reports success.
+```
+
+That turns a setup problem into a false negative evidence bundle. The command boundary should return a dependency error with the next action.
+
+```text
+Search reports the index as current because the max chunk id is unchanged after a page edit.
+```
+
+That serves stale policy text while looking healthy. Freshness checks should compare indexed content signatures.
+
+```text
+A different embedding model is accepted even though the vector table is fixed to BGE-M3 dimensions.
+```
+
+That moves an invalid configuration from setup time to query time. Reject it before indexing or searching.
 
 ## Related
 
@@ -147,5 +189,5 @@ The crawler/retrieval path follows the same local-source principle. `crawl` stor
 - `skills/telegram-support/SKILL.md` is the Codex-facing safety contract.
 - `skills/telegram-support/references/reply-workflow.md` is the concrete reply workflow agents should follow.
 - `agents/claude.md` and `agents/openai.yaml` are thin surfaces over the same CLI.
-- `tg_support/cli.py`, `tg_support/config.py`, `tg_support/storage/schema.py`, `tg_support/support/drafting.py`, and `tg_support/support/posting.py` are the core files to inspect before changing command or posting semantics.
-- `tests/test_posting_confirmation.py`, `tests/test_storage.py`, `tests/test_hybrid_retrieval.py`, `tests/test_chunking.py`, `tests/test_config.py`, and `tests/test_cli_setup.py` are the regression anchors for the architecture.
+- `tg_support/cli.py`, `tg_support/config.py`, `tg_support/storage/schema.py`, `tg_support/indexing/hybrid.py`, `tg_support/indexing/lexical.py`, `tg_support/indexing/vector.py`, `tg_support/indexing/embeddings.py`, `tg_support/support/drafting.py`, and `tg_support/support/posting.py` are the core files to inspect before changing command, retrieval, or posting semantics.
+- `tests/test_posting_confirmation.py`, `tests/test_storage.py`, `tests/test_hybrid_retrieval.py`, `tests/test_chunking.py`, `tests/test_config.py`, and `tests/test_cli_setup.py` are the regression anchors for the architecture. Preserve coverage for exact-term retrieval, sqlite-vec dependency failures, embedding load and encode failures, stale index signatures, unsupported retrieval config, CLI-safe confirmation tokens, and JSON readiness errors.
