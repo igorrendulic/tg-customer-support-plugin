@@ -17,7 +17,7 @@ It lets Codex or Claude search your Telegram support history, website/docs, manu
 
 Search Telegram support history, local docs, and repo evidence. Draft a reply. Post only after explicit confirmation.
 
-https://github.com/user-attachments/assets/<uploaded-demo-video-id>
+![Demo](docs/assets/tg_support_demo.gif)
 
 ## Who this is for
 
