@@ -11,6 +11,7 @@ from tg_support.storage.db import DocumentRecord, SupportDatabase
 AUTHOR_IDENTITY_RE = re.compile(r"@?[a-z0-9_][a-z0-9_ -]*", re.I)
 USERNAME_MATCH_BOOST = 20.0
 FUZZY_AUTHOR_MATCH_BOOST = 6.0
+OPERATOR_EXCHANGE_BOOST = 8.0
 
 
 def reciprocal_rank_fusion(result_sets: list[list[tuple[DocumentRecord, float]]], limit: int = 10, k: int = 60) -> list[tuple[DocumentRecord, float]]:
@@ -74,7 +75,8 @@ class HybridRetriever:
                 score
                 + (10.0 if document.source_type == "manual" and self._eligible(document, as_of) else 0.0)
                 + (USERNAME_MATCH_BOOST if document.id in username_match_ids else 0.0)
-                + (FUZZY_AUTHOR_MATCH_BOOST if document.id in fuzzy_author_match_ids else 0.0),
+                + (FUZZY_AUTHOR_MATCH_BOOST if document.id in fuzzy_author_match_ids else 0.0)
+                + self._exchange_authority_boost(document),
             )
             for document, score in fused
         ]
@@ -173,6 +175,13 @@ class HybridRetriever:
         if expires and date.fromisoformat(expires) < as_of:
             return False
         return True
+
+    def _exchange_authority_boost(self, document: DocumentRecord) -> float:
+        if document.source_type != "exchange":
+            return 0.0
+        if document.metadata.get("status") == "answered_by_operator":
+            return OPERATOR_EXCHANGE_BOOST
+        return 0.0
 
 
 __all__ = ["HybridRetriever", "RetrievalDependencyError", "reciprocal_rank_fusion"]

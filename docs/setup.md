@@ -33,6 +33,15 @@ scripts/tg-support --profile default setup --chat my-support-chat
 
 Chat inputs such as `channel-name`, `@channel-name`, and `https://t.me/channel-name` normalize to the same configured chat.
 
+Operator identities are optional. Add one or more when you want Support Exchanges to distinguish configured operator answers from peer/community replies:
+
+```bash
+scripts/tg-support --profile default setup \
+  --chat my-support-chat \
+  --operator igormailio \
+  --operator Igor
+```
+
 Website or blog seed URLs are optional. Add one or more when you want public support resources included in the local index:
 
 ```bash
@@ -89,7 +98,9 @@ scripts/tg-support --profile default status
 
 The first version exposes Telethon and Playwright through the helper-managed runtime. Tests use fakes; real Telegram access still requires local Telegram API credentials.
 
-Indexing chunks Telegram history, crawled pages, and Manual Knowledge Notes into source-linked documents, then rebuilds FTS5 and sqlite-vec projections. The index is safe to rebuild; source records, drafts, confirmations, and post attempts remain durable profile data.
+Indexing chunks Telegram history, crawled pages, Manual Knowledge Notes, and Support Exchanges into source-linked documents, then rebuilds FTS5 and sqlite-vec projections. The index is safe to rebuild; source records, drafts, confirmations, and post attempts remain durable profile data.
+
+Support Exchanges are role-labeled question/answer units derived from Telegram replies. They separate requester messages, configured operator answers, peer/community replies, and unanswered exchanges so surrounding chat text is not treated as one author's document. Operator answers can support draft replies; peer/community and unanswered exchange evidence should be presented as context unless another authoritative source corroborates it.
 
 ## Repository Evidence
 
@@ -110,6 +121,8 @@ Repository Evidence is live and branch-aware. It is not stored in the normal sea
 When evidence is sufficient, the agent should draft a direct answer. When evidence is missing, weak, conflicting, or the answer needs private/account-specific details, the agent should offer both a cautious evidence-limited answer and a DM follow-up asking only for the missing support-blocking information.
 
 DM follow-up wording is a Fallback Draft Option. It is not a Manual Knowledge Note, does not resolve evidence conflicts, and should not be cited as support truth.
+
+If insufficiency reasons include `peer_exchange_only`, `ambiguous_exchange_authority`, or `unanswered_exchange`, the agent should show the Support Exchange roles and avoid treating peer/community or unresolved exchange text as support truth.
 
 `draft-context` may return `fuzzy_author_candidates` when a requested user has no exact username/display-name match. Agents should show those candidates only for disambiguation and should not use them as target history until the operator chooses or reruns with an exact identity.
 

@@ -22,7 +22,8 @@ from tg_support.config import (
     write_telegram_credentials,
 )
 from tg_support.crawler import WebCrawler
-from tg_support.indexing.chunking import chunk_manual_notes, chunk_messages, chunk_pages
+from tg_support.indexing.chunking import chunk_manual_notes, chunk_messages, chunk_pages, chunk_support_exchanges
+from tg_support.indexing.exchanges import rebuild_support_exchanges
 from tg_support.indexing.embeddings import BgeEmbeddingModel
 from tg_support.indexing.hybrid import HybridRetriever, RetrievalDependencyError
 from tg_support.repository import RepositoryManager
@@ -145,7 +146,8 @@ def profile_status(config: SupportConfig) -> dict:
     index_stale = True
     if chunks:
         try:
-            index_stale = retriever_for_config(db, config).stale()
+            telegram_chunks_stale = db.max_message_id() > db.max_chunk_source_id("telegram")
+            index_stale = retriever_for_config(db, config).stale() or telegram_chunks_stale
         except Exception:
             index_stale = True
 
@@ -178,6 +180,7 @@ def profile_status(config: SupportConfig) -> dict:
         "profile": config.profile,
         "profile_dir": str(config.profile_dir),
         "chat": config.chat,
+        "operator_identities": list(config.operator_identities),
         "repository": None
         if config.repository is None
         else {"repository": config.repository.repository, "branch": config.repository.branch},
@@ -200,6 +203,7 @@ def command_setup(args: argparse.Namespace) -> int:
                 "repository": None
                 if not args.repository
                 else {"repository": args.repository, "branch": args.repository_branch},
+                "operator_identities": args.operator or [],
                 "history_limit": args.history_limit,
                 "embedding_model": args.embedding_model,
             },
@@ -274,12 +278,24 @@ def command_index(args: argparse.Namespace) -> int:
     config, db = db_for_args(args, initialize=True)
     page_chunks = chunk_pages(db)
     message_chunks = chunk_messages(db)
+    exchanges = rebuild_support_exchanges(db, config.operator_identities)
+    exchange_chunks = chunk_support_exchanges(db)
     note_chunks = chunk_manual_notes(db)
     try:
         run_id = retriever_for_config(db, config).build()
     except RetrievalDependencyError as exc:
         return emit(retrieval_error_payload(exc), 2)
-    return emit({"ok": True, "index_run_id": run_id, "page_chunks": page_chunks, "message_chunks": message_chunks, "note_chunks": note_chunks})
+    return emit(
+        {
+            "ok": True,
+            "index_run_id": run_id,
+            "page_chunks": page_chunks,
+            "message_chunks": message_chunks,
+            "exchange_chunks": exchange_chunks,
+            "support_exchanges": len(exchanges),
+            "note_chunks": note_chunks,
+        }
+    )
 
 
 def command_search(args: argparse.Namespace) -> int:
@@ -396,6 +412,7 @@ def build_parser() -> argparse.ArgumentParser:
     setup.add_argument("--render", choices=["auto", "always", "never"], default="auto")
     setup.add_argument("--repository")
     setup.add_argument("--repository-branch", default="main")
+    setup.add_argument("--operator", action="append", help="Telegram username or display name treated as a support operator")
     setup.add_argument("--history-limit", type=int, default=1000)
     setup.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
     setup.set_defaults(func=command_setup)

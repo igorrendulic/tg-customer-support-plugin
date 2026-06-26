@@ -1,4 +1,4 @@
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 SCHEMA_SQL = """
 PRAGMA foreign_keys = ON;
@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS manual_notes (
 
 CREATE TABLE IF NOT EXISTS chunks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  source_type TEXT NOT NULL CHECK(source_type IN ('telegram','web','manual')),
+  source_type TEXT NOT NULL CHECK(source_type IN ('telegram','web','manual','exchange')),
   source_id INTEGER NOT NULL,
   ordinal INTEGER NOT NULL,
   text TEXT NOT NULL,
@@ -95,6 +95,25 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fts_documents USING fts5(
   content='documents',
   content_rowid='id',
   tokenize = "unicode61 tokenchars '-_'"
+);
+
+CREATE TABLE IF NOT EXISTS support_exchanges (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  status TEXT NOT NULL CHECK(status IN ('answered_by_operator','peer_response_only','ambiguous','unanswered')),
+  confidence REAL NOT NULL DEFAULT 0,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS support_exchange_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  exchange_id INTEGER NOT NULL REFERENCES support_exchanges(id) ON DELETE CASCADE,
+  message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK(role IN ('requester','operator_response','peer_response','ambiguous_response','context')),
+  authority TEXT NOT NULL CHECK(authority IN ('operator','peer','ambiguous','none')),
+  ordinal INTEGER NOT NULL,
+  UNIQUE(exchange_id, message_id, role)
 );
 
 CREATE TABLE IF NOT EXISTS drafts (

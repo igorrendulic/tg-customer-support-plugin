@@ -36,6 +36,47 @@ class DocumentRecord:
 
 
 @dataclass(frozen=True)
+class ExchangeMemberInput:
+    message_id: int
+    role: str
+    authority: str
+    ordinal: int
+
+
+@dataclass(frozen=True)
+class SupportExchangeInput:
+    chat_id: int
+    status: str
+    confidence: float
+    members: tuple[ExchangeMemberInput, ...]
+    metadata: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class SupportExchangeMemberRecord:
+    id: int
+    exchange_id: int
+    message_id: int
+    telegram_message_id: int
+    author: str
+    sent_at: str
+    text: str
+    role: str
+    authority: str
+    ordinal: int
+
+
+@dataclass(frozen=True)
+class SupportExchangeRecord:
+    id: int
+    chat_id: int
+    status: str
+    confidence: float
+    metadata: dict[str, Any]
+    members: tuple[SupportExchangeMemberRecord, ...]
+
+
+@dataclass(frozen=True)
 class ManualNoteRecord:
     id: int
     text: str
@@ -70,6 +111,7 @@ class SupportDatabase:
             conn.executescript(SCHEMA_SQL)
             self._migrate_to_v2(conn)
             self._migrate_to_v3(conn)
+            self._migrate_to_v4(conn)
             conn.execute(
                 "INSERT OR IGNORE INTO schema_version(version) VALUES (?)",
                 (CURRENT_SCHEMA_VERSION,),
@@ -150,6 +192,91 @@ class SupportDatabase:
             )
             """
         )
+
+    def _migrate_to_v4(self, conn: sqlite3.Connection) -> None:
+        version_row = conn.execute("SELECT COALESCE(MAX(version), 0) AS version FROM schema_version").fetchone()
+        version = 0 if version_row is None else int(version_row["version"])
+        chunk_info = conn.execute("PRAGMA table_info(chunks)").fetchall()
+        if chunk_info:
+            create_sql_row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'chunks'").fetchone()
+            create_sql = "" if create_sql_row is None else str(create_sql_row["sql"])
+            if "'exchange'" not in create_sql:
+                conn.execute("DROP TABLE IF EXISTS fts_documents")
+                conn.execute("DROP TABLE IF EXISTS documents")
+                conn.execute("ALTER TABLE chunks RENAME TO chunks_old")
+                conn.execute(
+                    """
+                    CREATE TABLE chunks (
+                      id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      source_type TEXT NOT NULL CHECK(source_type IN ('telegram','web','manual','exchange')),
+                      source_id INTEGER NOT NULL,
+                      ordinal INTEGER NOT NULL,
+                      text TEXT NOT NULL,
+                      metadata_json TEXT NOT NULL DEFAULT '{}',
+                      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      UNIQUE(source_type, source_id, ordinal)
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO chunks(id, source_type, source_id, ordinal, text, metadata_json, created_at)
+                    SELECT id, source_type, source_id, ordinal, text, metadata_json, created_at FROM chunks_old
+                    """
+                )
+                conn.execute("DROP TABLE chunks_old")
+                conn.execute(
+                    """
+                    CREATE TABLE documents (
+                      id INTEGER PRIMARY KEY,
+                      chunk_id INTEGER NOT NULL UNIQUE REFERENCES chunks(id) ON DELETE CASCADE,
+                      source_type TEXT NOT NULL,
+                      source_id INTEGER NOT NULL,
+                      ordinal INTEGER NOT NULL,
+                      text TEXT NOT NULL,
+                      metadata_json TEXT NOT NULL DEFAULT '{}',
+                      source_updated_at TEXT,
+                      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE VIRTUAL TABLE IF NOT EXISTS fts_documents USING fts5(
+                      text,
+                      content='documents',
+                      content_rowid='id',
+                      tokenize = "unicode61 tokenchars '-_'"
+                    )
+                    """
+                )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS support_exchanges (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+              status TEXT NOT NULL CHECK(status IN ('answered_by_operator','peer_response_only','ambiguous','unanswered')),
+              confidence REAL NOT NULL DEFAULT 0,
+              metadata_json TEXT NOT NULL DEFAULT '{}',
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS support_exchange_messages (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              exchange_id INTEGER NOT NULL REFERENCES support_exchanges(id) ON DELETE CASCADE,
+              message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+              role TEXT NOT NULL CHECK(role IN ('requester','operator_response','peer_response','ambiguous_response','context')),
+              authority TEXT NOT NULL CHECK(authority IN ('operator','peer','ambiguous','none')),
+              ordinal INTEGER NOT NULL,
+              UNIQUE(exchange_id, message_id, role)
+            )
+            """
+        )
+        if version < 4:
+            conn.execute("INSERT OR IGNORE INTO schema_version(version) VALUES (4)")
 
     def schema_version(self) -> int | None:
         with self.connect() as conn:
@@ -311,6 +438,10 @@ class SupportDatabase:
             )
         return len(payload)
 
+    def delete_chunks_by_source_type(self, source_type: str) -> None:
+        with self.connect() as conn:
+            conn.execute("DELETE FROM chunks WHERE source_type = ?", (source_type,))
+
     def chunks(self) -> list[ChunkRecord]:
         with self.connect() as conn:
             rows = conn.execute("SELECT * FROM chunks ORDER BY id").fetchall()
@@ -332,6 +463,8 @@ class SupportDatabase:
             "drafts",
             "confirmations",
             "post_attempts",
+            "support_exchanges",
+            "support_exchange_messages",
         }:
             raise ValueError("Unsupported table")
         with self.connect() as conn:
@@ -340,6 +473,19 @@ class SupportDatabase:
     def max_chunk_id(self) -> int:
         with self.connect() as conn:
             return int(conn.execute("SELECT COALESCE(MAX(id), 0) AS max_id FROM chunks").fetchone()["max_id"])
+
+    def max_message_id(self) -> int:
+        with self.connect() as conn:
+            return int(conn.execute("SELECT COALESCE(MAX(id), 0) AS max_id FROM messages").fetchone()["max_id"])
+
+    def max_chunk_source_id(self, source_type: str) -> int:
+        with self.connect() as conn:
+            return int(
+                conn.execute(
+                    "SELECT COALESCE(MAX(source_id), 0) AS max_id FROM chunks WHERE source_type = ?",
+                    (source_type,),
+                ).fetchone()["max_id"]
+            )
 
     def chunk_signature(self) -> str:
         with self.connect() as conn:
@@ -395,6 +541,87 @@ class SupportDatabase:
                     [(row[0], self._fts_text(row[5], row[6])) for row in payload],
                 )
         return self.documents()
+
+    def replace_support_exchanges(self, exchanges: Iterable[SupportExchangeInput]) -> list[SupportExchangeRecord]:
+        with self.connect() as conn:
+            conn.execute("DELETE FROM support_exchange_messages")
+            conn.execute("DELETE FROM support_exchanges")
+            for exchange in exchanges:
+                cur = conn.execute(
+                    """
+                    INSERT INTO support_exchanges(chat_id, status, confidence, metadata_json)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        exchange.chat_id,
+                        exchange.status,
+                        exchange.confidence,
+                        json.dumps(exchange.metadata or {}, sort_keys=True),
+                    ),
+                )
+                exchange_id = int(cur.lastrowid)
+                conn.executemany(
+                    """
+                    INSERT INTO support_exchange_messages(exchange_id, message_id, role, authority, ordinal)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (exchange_id, member.message_id, member.role, member.authority, member.ordinal)
+                        for member in exchange.members
+                    ],
+                )
+        return self.support_exchanges()
+
+    def support_exchanges(self) -> list[SupportExchangeRecord]:
+        with self.connect() as conn:
+            exchange_rows = conn.execute("SELECT * FROM support_exchanges ORDER BY id").fetchall()
+            member_rows = conn.execute(
+                """
+                SELECT
+                  sem.id,
+                  sem.exchange_id,
+                  sem.message_id,
+                  sem.role,
+                  sem.authority,
+                  sem.ordinal,
+                  m.telegram_message_id,
+                  COALESCE(NULLIF(m.author_username, ''), NULLIF(u.display_name, ''), 'unknown') AS author,
+                  m.sent_at,
+                  m.text
+                FROM support_exchange_messages sem
+                JOIN messages m ON m.id = sem.message_id
+                LEFT JOIN users u ON u.id = m.author_id
+                ORDER BY sem.exchange_id, sem.ordinal, sem.id
+                """
+            ).fetchall()
+        members_by_exchange: dict[int, list[SupportExchangeMemberRecord]] = {}
+        for row in member_rows:
+            exchange_id = int(row["exchange_id"])
+            members_by_exchange.setdefault(exchange_id, []).append(
+                SupportExchangeMemberRecord(
+                    id=int(row["id"]),
+                    exchange_id=exchange_id,
+                    message_id=int(row["message_id"]),
+                    telegram_message_id=int(row["telegram_message_id"]),
+                    author=row["author"],
+                    sent_at=row["sent_at"],
+                    text=row["text"],
+                    role=row["role"],
+                    authority=row["authority"],
+                    ordinal=int(row["ordinal"]),
+                )
+            )
+        return [
+            SupportExchangeRecord(
+                id=int(row["id"]),
+                chat_id=int(row["chat_id"]),
+                status=row["status"],
+                confidence=float(row["confidence"]),
+                metadata=json.loads(row["metadata_json"]),
+                members=tuple(members_by_exchange.get(int(row["id"]), [])),
+            )
+            for row in exchange_rows
+        ]
 
     def documents(self) -> list[DocumentRecord]:
         with self.connect() as conn:
@@ -517,6 +744,8 @@ class SupportDatabase:
             return chunk.metadata.get("fetched_at")
         if chunk.source_type == "manual":
             return chunk.metadata.get("created_at") or chunk.metadata.get("effective_date")
+        if chunk.source_type == "exchange":
+            return chunk.metadata.get("sent_at")
         return None
 
     def _chunk_signature_from_rows(self, rows: Iterable[sqlite3.Row]) -> str:

@@ -5,7 +5,8 @@ import sys
 from datetime import date
 from types import SimpleNamespace
 
-from tg_support.indexing.chunking import chunk_manual_notes, chunk_messages, chunk_pages
+from tg_support.indexing.chunking import chunk_manual_notes, chunk_messages, chunk_pages, chunk_support_exchanges
+from tg_support.indexing.exchanges import rebuild_support_exchanges
 from tg_support.indexing.embeddings import BgeEmbeddingModel, RetrievalDependencyError
 from tg_support.indexing.hybrid import reciprocal_rank_fusion
 from tg_support.indexing.vector import SQLiteVecStore
@@ -343,6 +344,89 @@ def test_username_boost_does_not_replace_result_shape(db):
 
     assert {"chunk_id", "document_id", "source_type", "source_id", "score", "text", "metadata", "source_updated_at"} == set(result)
     assert result["source_type"] == "telegram"
+
+
+def test_support_exchange_search_returns_exchange_source_type(db):
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "snuglyni",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "Please delete my old account.",
+        },
+    )
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 2,
+            "author_id": 11,
+            "author_username": "igormailio",
+            "sent_at": "2026-06-01T12:01:00Z",
+            "text": "We cannot delete it from here.",
+            "reply_to_message_id": 1,
+        },
+    )
+    rebuild_support_exchanges(db, ("igormailio",))
+    chunk_messages(db, window=0)
+    chunk_support_exchanges(db)
+    retriever = make_test_retriever(db)
+    retriever.build()
+
+    results = retriever.search("delete old account", limit=5)
+    exchange = next(result for result in results if result["source_type"] == "exchange")
+
+    assert exchange["metadata"]["status"] == "answered_by_operator"
+    assert exchange["metadata"]["members"][0]["author"] == "snuglyni"
+    assert exchange["metadata"]["members"][0]["role"] == "requester"
+
+
+def test_operator_exchange_ranks_above_peer_only_exchange(db):
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    for message in [
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "alice",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "Passkey recovery is confusing.",
+        },
+        {
+            "message_id": 2,
+            "author_id": 12,
+            "author_username": "bob",
+            "sent_at": "2026-06-01T12:01:00Z",
+            "text": "Passkey recovery is impossible.",
+            "reply_to_message_id": 1,
+        },
+        {
+            "message_id": 3,
+            "author_id": 13,
+            "author_username": "carol",
+            "sent_at": "2026-06-01T12:02:00Z",
+            "text": "Passkey recovery is confusing.",
+        },
+        {
+            "message_id": 4,
+            "author_id": 11,
+            "author_username": "helper",
+            "sent_at": "2026-06-01T12:03:00Z",
+            "text": "Passkey recovery requires migration status.",
+            "reply_to_message_id": 3,
+        },
+    ]:
+        db.insert_message(chat_id, message)
+    rebuild_support_exchanges(db, ("helper",))
+    chunk_support_exchanges(db)
+    retriever = make_test_retriever(db)
+    retriever.build()
+
+    exchange_results = [result for result in retriever.search("passkey recovery", limit=5) if result["source_type"] == "exchange"]
+
+    assert exchange_results[0]["metadata"]["status"] == "answered_by_operator"
+    assert exchange_results[1]["metadata"]["status"] == "peer_response_only"
 
 
 def test_multiple_username_author_matches_prefer_recent_messages(db):

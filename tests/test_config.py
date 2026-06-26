@@ -50,6 +50,32 @@ def test_config_preserves_retrieval_defaults(tmp_path):
     assert config.vector_mode == "sqlite-vec"
 
 
+def test_config_normalizes_operator_identities(tmp_path):
+    config = config_from_dict(
+        {
+            "chat": "@support",
+            "operator_identities": ["@IgorMailio", " igormailio ", "Igor"],
+        },
+        profile_dir_override=tmp_path / "profile",
+    )
+
+    assert config.operator_identities == ("igormailio", "igor")
+
+
+def test_config_allows_missing_operator_identities(tmp_path):
+    config = config_from_dict({"chat": "@support"}, profile_dir_override=tmp_path / "profile")
+
+    assert config.operator_identities == ()
+
+
+def test_config_rejects_blank_operator_identity(tmp_path):
+    with pytest.raises(ConfigError, match="Operator identity cannot be blank"):
+        config_from_dict(
+            {"chat": "@support", "operator_identities": ["igormailio", "   "]},
+            profile_dir_override=tmp_path / "profile",
+        )
+
+
 def test_config_rejects_unsupported_embedding_model(tmp_path):
     with pytest.raises(ConfigError, match="Unsupported embedding model"):
         config_from_dict(
