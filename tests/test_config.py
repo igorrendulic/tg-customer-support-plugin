@@ -6,6 +6,7 @@ import pytest
 
 from tg_support.config import (
     DEFAULT_BASE_DIR,
+    DEFAULT_EMBEDDING_MODEL,
     ConfigError,
     canonicalize_url,
     canonicalize_repository,
@@ -36,6 +37,33 @@ def test_config_stores_profile_outside_source_tree(tmp_path):
     assert config.chat == "support"
     assert config.seeds[0].url == "https://example.com/blog"
     assert config.profile_dir == tmp_path / "profile"
+    assert config.embedding_model == DEFAULT_EMBEDDING_MODEL
+    assert config.vector_mode == "sqlite-vec"
+
+
+def test_config_preserves_retrieval_defaults(tmp_path):
+    config = config_from_dict(
+        {"chat": "@support", "seeds": ["example.com/blog"], "embedding_model": DEFAULT_EMBEDDING_MODEL, "vector_mode": "sqlite-vec"},
+        profile_dir_override=tmp_path / "profile",
+    )
+    assert config.embedding_model == DEFAULT_EMBEDDING_MODEL
+    assert config.vector_mode == "sqlite-vec"
+
+
+def test_config_rejects_unsupported_embedding_model(tmp_path):
+    with pytest.raises(ConfigError, match="Unsupported embedding model"):
+        config_from_dict(
+            {"chat": "@support", "seeds": ["example.com/blog"], "embedding_model": "custom-model"},
+            profile_dir_override=tmp_path / "profile",
+        )
+
+
+def test_config_rejects_unsupported_vector_mode(tmp_path):
+    with pytest.raises(ConfigError, match="Unsupported vector mode"):
+        config_from_dict(
+            {"chat": "@support", "seeds": ["example.com/blog"], "vector_mode": "custom-vector"},
+            profile_dir_override=tmp_path / "profile",
+        )
 
 
 def test_default_profile_dir_uses_dot_tg_support_home():

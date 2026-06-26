@@ -46,8 +46,24 @@ def test_index_run_does_not_delete_source_records(db):
     seed_messages(db)
     chunk_messages(db)
     before = db.count("messages")
-    db.record_index_run("local-hash-v1", "hybrid-v1")
+    db.record_index_run("BAAI/bge-m3", "sqlite-hybrid-v1")
     assert db.count("messages") == before
+    assert db.latest_index_run("BAAI/bge-m3")["source_signature"] == db.chunk_signature()
+
+
+def test_rebuild_documents_preserves_source_metadata(db):
+    seed_messages(db)
+    page_id = db.upsert_page("https://example.com/account-transfer", "Transfer", "Account-transfer_policy details.")
+    chunk_messages(db)
+    chunk_pages(db)
+
+    documents = db.rebuild_documents()
+
+    assert db.count("documents") == len(db.chunks())
+    web = next(document for document in documents if document.source_type == "web")
+    assert web.source_id == page_id
+    assert web.metadata["url"] == "https://example.com/account-transfer"
+    assert db.search_fts('"account-transfer_policy"', 3)[0][0].id == web.id
 
 
 def test_initialize_migrates_v1_chunks_to_manual_source_type(tmp_path):
@@ -92,5 +108,4 @@ def test_initialize_migrates_v1_chunks_to_manual_source_type(tmp_path):
 
     assert db.schema_version() == CURRENT_SCHEMA_VERSION
     assert {chunk.source_type for chunk in db.chunks()} == {"web", "manual"}
-    db.save_lexical_terms(1, ["rebuilt"])
-    db.save_vector(1, "local-hash-v1", [1.0])
+    assert {document.source_type for document in db.rebuild_documents()} == {"web", "manual"}

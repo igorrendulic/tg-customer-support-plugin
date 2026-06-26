@@ -10,7 +10,8 @@ from urllib.parse import urlparse, urlunparse
 
 
 DEFAULT_PROFILE = "default"
-DEFAULT_EMBEDDING_MODEL = "local-hash-v1"
+DEFAULT_EMBEDDING_MODEL = "BAAI/bge-m3"
+DEFAULT_VECTOR_MODE = "sqlite-vec"
 DEFAULT_BASE_DIR = Path(os.environ.get("TG_SUPPORT_HOME", Path.home() / ".tg-support"))
 
 
@@ -39,7 +40,7 @@ class SupportConfig:
     profile: str = DEFAULT_PROFILE
     history_limit: int = 1000
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
-    vector_mode: str = "fallback"
+    vector_mode: str = DEFAULT_VECTOR_MODE
     profile_dir: Path = field(default_factory=lambda: profile_dir(DEFAULT_PROFILE))
 
     @property
@@ -165,14 +166,20 @@ def config_from_dict(data: dict[str, Any], profile_dir_override: Path | None = N
         )
     profile = str(data.get("profile", DEFAULT_PROFILE))
     pdir = profile_dir_override or profile_dir(profile)
+    vector_mode = str(data.get("vector_mode", DEFAULT_VECTOR_MODE))
+    if vector_mode != DEFAULT_VECTOR_MODE:
+        raise ConfigError(f"Unsupported vector mode: {vector_mode}")
+    embedding_model = str(data.get("embedding_model", DEFAULT_EMBEDDING_MODEL))
+    if embedding_model != DEFAULT_EMBEDDING_MODEL:
+        raise ConfigError(f"Unsupported embedding model: {embedding_model}")
     return SupportConfig(
         chat=chat,
         seeds=tuple(seeds),
         repository=repository,
         profile=profile,
         history_limit=int(data.get("history_limit", 1000)),
-        embedding_model=str(data.get("embedding_model", DEFAULT_EMBEDDING_MODEL)),
-        vector_mode=str(data.get("vector_mode", "fallback")),
+        embedding_model=embedding_model,
+        vector_mode=vector_mode,
         profile_dir=pdir,
     )
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -22,7 +23,8 @@ from tg_support.config import (
 )
 from tg_support.crawler import WebCrawler
 from tg_support.indexing.chunking import chunk_manual_notes, chunk_messages, chunk_pages
-from tg_support.indexing.hybrid import HybridRetriever
+from tg_support.indexing.embeddings import BgeM3EmbeddingModel
+from tg_support.indexing.hybrid import HybridRetriever, RetrievalDependencyError
 from tg_support.repository import RepositoryManager
 from tg_support.storage.db import SupportDatabase
 from tg_support.storage.schema import CURRENT_SCHEMA_VERSION
@@ -61,6 +63,27 @@ def db_for_args(args: argparse.Namespace, initialize: bool = False) -> tuple[Sup
     if initialize:
         db.initialize()
     return config, db
+
+
+def retriever_for_config(db: SupportDatabase, config: SupportConfig) -> HybridRetriever:
+    return HybridRetriever(db, embedding_model=BgeM3EmbeddingModel(config.embedding_model))
+
+
+def retrieval_error_payload(exc: RetrievalDependencyError) -> dict:
+    return {
+        "ok": False,
+        "error": str(exc),
+        "next_action": "install retrieval dependencies and rerun index",
+        "sqlite_version": sqlite3.sqlite_version,
+    }
+
+
+def index_required_payload() -> dict:
+    return {"ok": False, "error": "Search index has not been built.", "next_action": "index"}
+
+
+def index_ready(db: SupportDatabase) -> bool:
+    return table_count(db, "documents") > 0
 
 
 def telegram_service_for_args(args: argparse.Namespace) -> tuple[SupportConfig, TelegramService]:
@@ -114,7 +137,7 @@ def profile_status(config: SupportConfig) -> dict:
     index_stale = True
     if chunks:
         try:
-            index_stale = HybridRetriever(db).stale(config.embedding_model)
+            index_stale = retriever_for_config(db, config).stale()
         except Exception:
             index_stale = True
 
@@ -244,13 +267,21 @@ def command_index(args: argparse.Namespace) -> int:
     page_chunks = chunk_pages(db)
     message_chunks = chunk_messages(db)
     note_chunks = chunk_manual_notes(db)
-    run_id = HybridRetriever(db).build(config.embedding_model)
+    try:
+        run_id = retriever_for_config(db, config).build()
+    except RetrievalDependencyError as exc:
+        return emit(retrieval_error_payload(exc), 2)
     return emit({"ok": True, "index_run_id": run_id, "page_chunks": page_chunks, "message_chunks": message_chunks, "note_chunks": note_chunks})
 
 
 def command_search(args: argparse.Namespace) -> int:
-    _config, db = db_for_args(args)
-    search = HybridRetriever(db).search_with_conflicts(args.query, limit=args.limit)
+    config, db = db_for_args(args)
+    if not index_ready(db):
+        return emit(index_required_payload(), 2)
+    try:
+        search = retriever_for_config(db, config).search_with_conflicts(args.query, limit=args.limit)
+    except RetrievalDependencyError as exc:
+        return emit(retrieval_error_payload(exc), 2)
     return emit({"ok": True, "results": search["evidence"], "conflicts": search["conflicts"]})
 
 
@@ -270,8 +301,20 @@ def command_stats(args: argparse.Namespace) -> int:
 
 
 def command_draft_context(args: argparse.Namespace) -> int:
-    _config, db = db_for_args(args)
-    context = draft_context(db, args.query or "", username=args.user, message_id=args.message_id, limit=args.limit)
+    config, db = db_for_args(args)
+    if not index_ready(db):
+        return emit(index_required_payload(), 2)
+    try:
+        context = draft_context(
+            db,
+            args.query or "",
+            username=args.user,
+            message_id=args.message_id,
+            limit=args.limit,
+            retriever=retriever_for_config(db, config),
+        )
+    except RetrievalDependencyError as exc:
+        return emit(retrieval_error_payload(exc), 2)
     return emit({"ok": True, "context": context})
 
 

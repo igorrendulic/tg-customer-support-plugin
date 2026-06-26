@@ -5,10 +5,9 @@ import json
 from tg_support.cli import main
 from tg_support.config import load_config
 from tg_support.indexing.chunking import chunk_manual_notes, chunk_messages, chunk_pages
-from tg_support.indexing.hybrid import HybridRetriever
 from tg_support.storage.db import SupportDatabase
 from tg_support.support.context import draft_context
-from tests.conftest import seed_messages
+from tests.conftest import make_test_retriever, patch_test_retriever, seed_messages
 
 
 def test_knowledge_add_saves_confirmed_note(tmp_path, capsys, monkeypatch):
@@ -61,7 +60,8 @@ def test_no_manual_note_is_saved_when_command_is_not_called(tmp_path, monkeypatc
     assert SupportDatabase(config.db_path).manual_notes() == []
 
 
-def test_draft_context_reports_manual_note_conflicts(db):
+def test_draft_context_reports_manual_note_conflicts(db, monkeypatch):
+    patch_test_retriever(monkeypatch)
     chat_id = seed_messages(db)
     db.insert_message(
         chat_id,
@@ -88,7 +88,7 @@ def test_draft_context_reports_manual_note_conflicts(db):
     chunk_messages(db)
     chunk_pages(db)
     chunk_manual_notes(db)
-    HybridRetriever(db).build()
+    make_test_retriever(db).build()
 
     context = draft_context(db, "account transfer email", message_id=5)
 
@@ -102,6 +102,7 @@ def test_draft_context_reports_manual_note_conflicts(db):
 
 
 def test_search_outputs_manual_note_evidence_and_conflicts(tmp_path, capsys, monkeypatch):
+    patch_test_retriever(monkeypatch)
     monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
     assert main(["setup", "--chat", "support", "--seed", "example.com/blog"]) == 0
     config = load_config(tmp_path / "default" / "config.json")
@@ -120,7 +121,7 @@ def test_search_outputs_manual_note_evidence_and_conflicts(tmp_path, capsys, mon
     db.create_manual_note("Account transfer is discontinued. Users must register a new email address.", "2026-04-02")
     chunk_messages(db)
     chunk_manual_notes(db)
-    HybridRetriever(db).build()
+    make_test_retriever(db).build()
     capsys.readouterr()
 
     assert main(["search", "account transfer email"]) == 0

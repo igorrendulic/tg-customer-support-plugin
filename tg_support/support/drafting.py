@@ -6,6 +6,10 @@ from secrets import token_urlsafe
 from tg_support.storage.db import SupportDatabase
 
 
+def confirmation_token(action: str) -> str:
+    return f"{action}_{token_urlsafe(18)}"
+
+
 def create_draft(db: SupportDatabase, target_chat: str, message_text: str, evidence: dict, target_user: str | None = None, target_message_id: int | None = None) -> dict:
     with db.connect() as conn:
         cur = conn.execute(
@@ -16,8 +20,8 @@ def create_draft(db: SupportDatabase, target_chat: str, message_text: str, evide
             (target_chat, target_user, target_message_id, message_text, json.dumps(evidence, sort_keys=True)),
         )
         draft_id = int(cur.lastrowid)
-        post_token = token_urlsafe(18)
-        cancel_token = token_urlsafe(18)
+        post_token = confirmation_token("post")
+        cancel_token = confirmation_token("cancel")
         conn.execute("INSERT INTO confirmations(draft_id, token, action) VALUES (?, ?, 'post')", (draft_id, post_token))
         conn.execute("INSERT INTO confirmations(draft_id, token, action) VALUES (?, ?, 'cancel')", (draft_id, cancel_token))
     return {"draft_id": draft_id, "post_token": post_token, "cancel_token": cancel_token}

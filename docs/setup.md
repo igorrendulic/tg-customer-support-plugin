@@ -16,11 +16,13 @@ The `scripts/tg-support` helper also bootstraps its own Python runtime outside t
 
 Set `TG_SUPPORT_VENV` to use a different runtime environment.
 
+The helper installs retrieval dependencies for normal operator use. Retrieval uses SQLite FTS5, sqlite-vec, and local `BAAI/bge-m3` embeddings. If your local Python or SQLite build cannot load sqlite-vec, `index` returns a JSON error with the SQLite version and the next setup action instead of falling back to hash vectors.
+
 ## Install For Development
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"
+.venv/bin/pip install -e ".[retrieval,dev]"
 ```
 
 ## Configure
@@ -79,6 +81,8 @@ scripts/tg-support --profile default status
 
 The first version exposes Telethon and Playwright through the helper-managed runtime. Tests use fakes; real Telegram access still requires local Telegram API credentials.
 
+Indexing chunks Telegram history, crawled pages, and Manual Knowledge Notes into source-linked documents, then rebuilds FTS5 and sqlite-vec projections. The index is safe to rebuild; source records, drafts, confirmations, and post attempts remain durable profile data.
+
 ## Repository Evidence
 
 Use Repository Evidence for product-behavior, capability, API-behavior, or debugging questions:
@@ -88,6 +92,8 @@ scripts/tg-support --profile default repo-evidence "account transfer api"
 ```
 
 The command manages a profile-local checkout of the configured branch and checks whether it is stale before reading code. If refresh fails, the JSON output includes a warning and may still include evidence from the last checkout. Agents should show that warning before relying on the code.
+
+Repository Evidence is live and branch-aware. It is not stored in the normal search index, because support answers about current product behavior should read the configured branch directly.
 
 ## Manual Knowledge
 

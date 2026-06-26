@@ -3,14 +3,17 @@ from __future__ import annotations
 import json
 from io import StringIO
 from pathlib import Path
+import sqlite3
 
 from tg_support.cli import main
 from tg_support.config import load_config, write_telegram_authorization
+from tg_support.indexing.chunking import chunk_messages
+from tg_support.indexing.embeddings import RetrievalDependencyError
 from tg_support.storage.db import SupportDatabase
 from tg_support.support.drafting import create_draft
 from tg_support.support.context import draft_context
 from tg_support.telegram_client import TelegramError
-from tests.conftest import seed_messages
+from tests.conftest import make_test_retriever, patch_test_retriever, seed_messages
 
 
 def test_cli_setup_stores_normalized_config(tmp_path, capsys, monkeypatch):
@@ -21,6 +24,8 @@ def test_cli_setup_stores_normalized_config(tmp_path, capsys, monkeypatch):
     assert output["ok"] is True
     config = load_config(tmp_path / "demo" / "config.json")
     assert config.chat == "support"
+    assert config.embedding_model == "BAAI/bge-m3"
+    assert config.vector_mode == "sqlite-vec"
 
 
 def test_cli_setup_stores_optional_repository_config(tmp_path, capsys, monkeypatch):
@@ -141,6 +146,7 @@ def test_credentials_without_stdin_or_tty_fails_actionably(tmp_path, capsys, mon
 
 
 def test_status_progresses_through_corpus_readiness(tmp_path, capsys, monkeypatch):
+    patch_test_retriever(monkeypatch)
     monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
     assert main(["setup", "--chat", "support", "--seed", "example.com/blog"]) == 0
     monkeypatch.setattr("sys.stdin", StringIO("secret\n"))
@@ -171,6 +177,93 @@ def test_status_progresses_through_corpus_readiness(tmp_path, capsys, monkeypatc
     output = json.loads(capsys.readouterr().out)
     assert output["ok"] is True
     assert output["next_action"] == "ready"
+
+
+def test_index_reports_retrieval_dependency_errors(tmp_path, capsys, monkeypatch):
+    class FailingRetriever:
+        def __init__(self, _db, *args, **kwargs):
+            pass
+
+        def build(self, *args, **kwargs):
+            raise RetrievalDependencyError("missing vector support")
+
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    monkeypatch.setattr("tg_support.cli.HybridRetriever", FailingRetriever)
+    assert main(["setup", "--chat", "support", "--seed", "example.com/blog"]) == 0
+    capsys.readouterr()
+
+    code = main(["index"])
+    output = json.loads(capsys.readouterr().out)
+
+    assert code == 2
+    assert output["ok"] is False
+    assert output["error"] == "missing vector support"
+    assert output["next_action"] == "install retrieval dependencies and rerun index"
+    assert output["sqlite_version"] == sqlite3.sqlite_version
+
+
+def test_search_before_index_reports_next_action(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    assert main(["setup", "--chat", "support", "--seed", "example.com/blog"]) == 0
+    capsys.readouterr()
+
+    code = main(["search", "password reset"])
+    output = json.loads(capsys.readouterr().out)
+
+    assert code == 2
+    assert output == {"ok": False, "error": "Search index has not been built.", "next_action": "index"}
+
+
+def test_search_reports_retrieval_dependency_errors(tmp_path, capsys, monkeypatch):
+    class FailingRetriever:
+        def __init__(self, _db, *args, **kwargs):
+            pass
+
+        def search_with_conflicts(self, *_args, **_kwargs):
+            raise RetrievalDependencyError("sqlite extension unavailable")
+
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    monkeypatch.setattr("tg_support.cli.HybridRetriever", FailingRetriever)
+    assert main(["setup", "--chat", "support", "--seed", "example.com/blog"]) == 0
+    config = load_config(tmp_path / "default" / "config.json")
+    db = SupportDatabase(config.db_path)
+    db.upsert_chunk("web", 1, 0, "indexed text")
+    db.rebuild_documents()
+    capsys.readouterr()
+
+    code = main(["search", "indexed"])
+    output = json.loads(capsys.readouterr().out)
+
+    assert code == 2
+    assert output["ok"] is False
+    assert output["error"] == "sqlite extension unavailable"
+    assert output["sqlite_version"] == sqlite3.sqlite_version
+
+
+def test_draft_context_reports_retrieval_dependency_errors(tmp_path, capsys, monkeypatch):
+    class FailingRetriever:
+        def __init__(self, _db, *args, **kwargs):
+            pass
+
+        def search_with_conflicts(self, *_args, **_kwargs):
+            raise RetrievalDependencyError("sqlite extension unavailable")
+
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    monkeypatch.setattr("tg_support.cli.HybridRetriever", FailingRetriever)
+    assert main(["setup", "--chat", "support", "--seed", "example.com/blog"]) == 0
+    config = load_config(tmp_path / "default" / "config.json")
+    db = SupportDatabase(config.db_path)
+    db.upsert_chunk("web", 1, 0, "indexed text")
+    db.rebuild_documents()
+    capsys.readouterr()
+
+    code = main(["draft-context", "--query", "indexed"])
+    output = json.loads(capsys.readouterr().out)
+
+    assert code == 2
+    assert output["ok"] is False
+    assert output["error"] == "sqlite extension unavailable"
+    assert output["sqlite_version"] == sqlite3.sqlite_version
 
 
 def test_status_with_session_file_but_no_authorization_still_suggests_login(tmp_path, capsys, monkeypatch):
@@ -255,8 +348,11 @@ def test_confirm_telegram_error_returns_json_and_keeps_token_retryable(tmp_path,
     assert output["telegram_message_id"] == 777
 
 
-def test_draft_context_for_known_user(db):
+def test_draft_context_for_known_user(db, monkeypatch):
+    patch_test_retriever(monkeypatch)
     seed_messages(db)
+    chunk_messages(db)
+    make_test_retriever(db).build()
     context = draft_context(db, "password reset", username="alice")
     assert context["history"]
     assert context["target"]["username"] == "alice"
