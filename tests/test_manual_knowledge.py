@@ -6,6 +6,7 @@ from tg_support.cli import main
 from tg_support.config import load_config
 from tg_support.indexing.chunking import chunk_manual_notes, chunk_messages, chunk_pages
 from tg_support.storage.db import SupportDatabase
+from tg_support.support.drafting import create_draft
 from tg_support.support.context import draft_context
 from tests.conftest import make_test_retriever, patch_test_retriever, seed_messages
 
@@ -60,6 +61,28 @@ def test_no_manual_note_is_saved_when_command_is_not_called(tmp_path, monkeypatc
     assert SupportDatabase(config.db_path).manual_notes() == []
 
 
+def test_fallback_draft_metadata_is_not_manual_knowledge_or_evidence(db):
+    create_draft(
+        db,
+        "support",
+        "Please DM the account email so I can check.",
+        {
+            "evidence_sufficiency": {
+                "state": "insufficient",
+                "direct_answer_supported": False,
+                "fallback_recommended": True,
+                "reasons": [{"code": "account_specific_gap"}],
+            },
+            "selected_option": "dm_follow_up",
+        },
+        target_message_id=123,
+    )
+
+    assert db.manual_notes() == []
+    assert chunk_manual_notes(db) == 0
+    assert [chunk for chunk in db.chunks() if chunk.source_type == "manual"] == []
+
+
 def test_draft_context_reports_manual_note_conflicts(db, monkeypatch):
     patch_test_retriever(monkeypatch)
     chat_id = seed_messages(db)
@@ -93,6 +116,8 @@ def test_draft_context_reports_manual_note_conflicts(db, monkeypatch):
     context = draft_context(db, "account transfer email", message_id=5)
 
     assert context["evidence"][0]["source_type"] == "manual"
+    assert context["evidence_sufficiency"]["state"] == "insufficient"
+    assert "conflicting_evidence" in {reason["code"] for reason in context["evidence_sufficiency"]["reasons"]}
     assert context["conflicts"]
     conflict = context["conflicts"][0]
     assert conflict["resolution_required"] is True

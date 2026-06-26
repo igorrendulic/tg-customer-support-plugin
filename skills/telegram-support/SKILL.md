@@ -55,6 +55,8 @@ Add `--expires-date <YYYY-MM-DD>` and `--caveats <text>` when present. If the op
 
 When `search` or `draft-context` returns Manual Knowledge Note evidence, include it in the evidence summary. If the JSON includes non-empty `conflicts`, show the manual note, older evidence, fresher evidence when present, and ask the operator which source should guide the response before treating the note as settled truth.
 
+When `draft-context` returns `evidence_sufficiency`, show the sufficiency state and reasons in the evidence summary. If `direct_answer_supported` is false, present two draft options before creating a draft: a cautious evidence-limited answer and a DM follow-up asking only for the missing support-blocking information. Do not save the DM follow-up wording as Manual Knowledge and do not treat it as evidence.
+
 ## Repository Evidence
 
 For questions about what the product supports, how an API behaves, why a user can or cannot do something, or likely debugging causes, run:
@@ -66,6 +68,8 @@ For questions about what the product supports, how an API behaves, why a user ca
 Use Repository Evidence from the configured branch as the highest-priority support truth. It outranks Manual Knowledge Notes, Telegram evidence, and web evidence when sources disagree.
 
 If `repository_evidence.warning` is present, show it before relying on the code evidence. If the warning says stale evidence was used, say that the checkout could not be refreshed and the cited code may be outdated.
+
+For reply drafting, a stale Repository Evidence warning should trigger the same two-option fallback posture as insufficient draft-context evidence: offer a cautious evidence-limited answer and a DM follow-up option before creating the selected draft.
 
 Do not run repository lookup for normal analytics or drafting questions that do not depend on product behavior. Do not create Manual Knowledge Notes, modify code, create branches, or open pull requests from repository findings unless the operator starts a separate explicit workflow.
 

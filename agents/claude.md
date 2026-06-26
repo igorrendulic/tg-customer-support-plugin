@@ -24,4 +24,8 @@ When the operator asks to save durable support knowledge, show the parsed note t
 
 ## Replies
 
-Use `scripts/tg-support draft-context --user <username>` or `--message-id <id>`. Show any returned conflicts before drafting. Show the exact reply text and evidence to the operator, then create and confirm a draft only after the operator explicitly says `post`.
+Use `scripts/tg-support draft-context --user <username>` or `--message-id <id>`. Show any returned conflicts before drafting.
+
+When `draft-context` returns `evidence_sufficiency`, show its state and reasons with the evidence summary. If `direct_answer_supported` is false, or Repository Evidence has a stale warning, present two options before creating a draft: a cautious evidence-limited answer and a DM follow-up asking only for the missing support-blocking information. Do not save the DM follow-up wording as Manual Knowledge or cite it as evidence.
+
+Show the exact selected reply text and evidence to the operator, then create and confirm a draft only after the operator explicitly says `post`.

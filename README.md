@@ -165,6 +165,8 @@ scripts/tg-support --profile default draft-create --message-id 123 --text "Thank
 
 Repository Evidence is live and branch-specific rather than indexed. Use it for product-behavior, capability, API-behavior, or debugging questions. If the checkout cannot refresh, the CLI returns a stale warning so the agent can tell the operator that cited code may be outdated.
 
+`draft-context` returns evidence sufficiency metadata with the evidence bundle. When evidence supports a direct answer, the agent should draft the direct reply. When evidence is missing, weak, conflicting, or needs private/account-specific details, the agent should offer both a cautious evidence-limited answer and a DM follow-up asking for the missing information. DM follow-up wording is not Manual Knowledge and is not evidence.
+
 Save dated support knowledge through Codex after reviewing the parsed fields, or directly through the CLI after the operator has confirmed the note:
 
 ```bash
