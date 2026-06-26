@@ -1,7 +1,7 @@
 # Telegram Support Agent
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
-[![License](https://img.shields.io/github/license/igorrendulic/tg-customer-support-plugin)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Local First](https://img.shields.io/badge/local--first-yes-brightgreen)](#why-this-shape)
 [![Codex Plugin](https://img.shields.io/badge/Codex-plugin-black)](#codex-and-claude)
 [![Claude Compatible](https://img.shields.io/badge/Claude-compatible-black)](#codex-and-claude)
