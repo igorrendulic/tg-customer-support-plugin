@@ -10,7 +10,7 @@ from tg_support.indexing.embeddings import BgeEmbeddingModel, RetrievalDependenc
 from tg_support.indexing.hybrid import reciprocal_rank_fusion
 from tg_support.indexing.vector import SQLiteVecStore
 from tg_support.storage.db import DocumentRecord
-from tests.conftest import make_test_retriever, seed_messages, seed_username_search_messages
+from tests.conftest import make_test_retriever, seed_display_name_author_messages, seed_messages, seed_username_search_messages
 
 
 def test_hybrid_search_returns_source_references(db):
@@ -65,6 +65,30 @@ def test_exact_username_author_match_is_boosted_above_text_mentions(db):
     assert "I cannot access my mailbox" in results[0]["text"]
 
 
+def test_display_name_author_match_is_boosted_when_username_missing(db):
+    seed_display_name_author_messages(db)
+    chunk_messages(db, window=0)
+    retriever = make_test_retriever(db)
+    retriever.build()
+
+    results = retriever.search("crinx7", limit=3)
+
+    assert results[0]["source_type"] == "telegram"
+    assert results[0]["metadata"]["author"] == "crinx7"
+    assert "email already exist" in results[0]["text"]
+
+
+def test_display_name_author_match_accepts_at_prefix(db):
+    seed_display_name_author_messages(db)
+    chunk_messages(db, window=0)
+    retriever = make_test_retriever(db)
+    retriever.build()
+
+    results = retriever.search("@crinx7", limit=3)
+
+    assert results[0]["metadata"]["author"] == "crinx7"
+
+
 def test_at_prefixed_username_matches_author_metadata(db):
     seed_username_search_messages(db)
     chunk_messages(db, window=0)
@@ -74,6 +98,34 @@ def test_at_prefixed_username_matches_author_metadata(db):
     results = retriever.search("@crinx7", limit=3)
 
     assert results[0]["metadata"]["author"] == "Crinx7"
+
+
+class FakeTranslationHelper:
+    def translate_to_english(self, _text: str, _source_language: str) -> str:
+        return "just applied for a mailbox"
+
+
+def test_translated_helper_text_is_searchable_without_replacing_original(db):
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "yonghengyige",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "刚申请一个邮箱",
+        },
+    )
+    chunk_messages(db, window=0, translation_helper=FakeTranslationHelper())
+    retriever = make_test_retriever(db)
+    retriever.build()
+
+    results = retriever.search("mailbox", limit=3)
+
+    assert results[0]["text"] == "yonghengyige: 刚申请一个邮箱"
+    assert results[0]["metadata"]["source_language"] == "zh"
+    assert results[0]["metadata"]["translated_text"] == "just applied for a mailbox"
 
 
 def test_username_boost_does_not_replace_result_shape(db):

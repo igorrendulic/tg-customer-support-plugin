@@ -3,7 +3,7 @@ from __future__ import annotations
 from tg_support.indexing.chunking import chunk_messages, chunk_pages
 from tg_support.storage.db import SupportDatabase
 from tg_support.storage.schema import CURRENT_SCHEMA_VERSION
-from tests.conftest import seed_messages
+from tests.conftest import seed_display_name_author_messages, seed_messages
 
 
 def test_database_initialization_is_idempotent(db):
@@ -64,6 +64,70 @@ def test_rebuild_documents_preserves_source_metadata(db):
     assert web.source_id == page_id
     assert web.metadata["url"] == "https://example.com/account-transfer"
     assert db.search_fts('"account-transfer_policy"', 3)[0][0].id == web.id
+
+
+def test_message_author_rows_use_display_name_when_username_missing(db):
+    seed_display_name_author_messages(db)
+
+    rows = db.telegram_message_author_rows()
+
+    display_name = next(row for row in rows if row["telegram_message_id"] == 2)
+    unknown = next(row for row in rows if row["telegram_message_id"] == 3)
+    assert display_name["author_label"] == "crinx7"
+    assert display_name["author_username"] is None
+    assert display_name["author_display_name"] == "crinx7"
+    assert unknown["author_label"] == "unknown"
+
+
+def test_telegram_author_documents_match_display_name_when_username_missing(db):
+    seed_display_name_author_messages(db)
+    chunk_messages(db, window=0)
+    db.rebuild_documents()
+
+    documents = db.telegram_documents_by_author_username("crinx7")
+
+    assert documents
+    assert documents[0].metadata["author"] == "crinx7"
+    assert "email already exist" in documents[0].text
+
+
+def test_telegram_author_documents_match_display_name_when_username_empty(db):
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "",
+            "author_name": "crinx7",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "It says email already exist",
+        },
+    )
+    chunk_messages(db, window=0)
+    db.rebuild_documents()
+
+    documents = db.telegram_documents_by_author_username("@crinx7")
+
+    assert documents
+    assert documents[0].metadata["author"] == "crinx7"
+
+
+def test_rebuild_documents_indexes_translation_without_replacing_text(db):
+    chunk_id = db.upsert_chunk(
+        "telegram",
+        1,
+        0,
+        "yonghengyige: 刚申请一个邮箱",
+        {"translated_text": "just applied for a mailbox"},
+    )
+
+    documents = db.rebuild_documents()
+
+    document = documents[0]
+    assert document.chunk_id == chunk_id
+    assert document.text == "yonghengyige: 刚申请一个邮箱"
+    assert db.search_fts('"mailbox"', 3)[0][0].id == document.id
 
 
 def test_initialize_migrates_v1_chunks_to_manual_source_type(tmp_path):

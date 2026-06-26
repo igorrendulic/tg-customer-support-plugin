@@ -3,6 +3,21 @@ from __future__ import annotations
 from tg_support.storage.db import SupportDatabase
 
 
+class TranslationHelper:
+    def translate_to_english(self, text: str, source_language: str) -> str | None:
+        return None
+
+
+def infer_language(text: str) -> str | None:
+    if any("\u4e00" <= char <= "\u9fff" for char in text):
+        return "zh"
+    if any("\u0600" <= char <= "\u06ff" for char in text):
+        return "ar"
+    if any(char.isalpha() for char in text):
+        return "en"
+    return None
+
+
 def split_text(text: str, max_words: int = 180, overlap: int = 30) -> list[str]:
     words = text.split()
     if not words:
@@ -54,26 +69,36 @@ def chunk_manual_notes(db: SupportDatabase) -> int:
     return db.upsert_chunks(rows)
 
 
-def chunk_messages(db: SupportDatabase, window: int = 3) -> int:
+def chunk_messages(db: SupportDatabase, window: int = 3, translation_helper: TranslationHelper | None = None) -> int:
     chunks = []
-    with db.connect() as conn:
-        rows = conn.execute(
-            """
-            SELECT m.id, m.telegram_message_id, m.author_username, m.sent_at, m.text, c.input AS chat
-            FROM messages m JOIN chats c ON c.id = m.chat_id
-            ORDER BY m.chat_id, m.telegram_message_id
-            """
-        ).fetchall()
+    rows = db.telegram_message_author_rows()
+    helper = translation_helper or TranslationHelper()
     for index, row in enumerate(rows):
         neighbors = rows[max(0, index - window) : min(len(rows), index + window + 1)]
-        text = "\n".join(f"{n['author_username'] or 'unknown'}: {n['text']}" for n in neighbors)
+        lines = [f"{n['author_label']}: {n['text'].strip()}" for n in neighbors if n["text"].strip()]
+        text = "\n".join(lines)
+        if not text:
+            continue
+        metadata = {
+            "chat": row["chat"],
+            "message_id": row["telegram_message_id"],
+            "author": row["author_label"],
+            "sent_at": row["sent_at"],
+        }
+        source_language = infer_language(row["text"])
+        if source_language is not None:
+            metadata["source_language"] = source_language
+        if source_language and source_language != "en" and row["text"].strip():
+            translated = helper.translate_to_english(row["text"], source_language)
+            if translated:
+                metadata["translated_text"] = translated
         chunks.append(
             (
                 "telegram",
                 row["id"],
                 0,
                 text,
-                {"chat": row["chat"], "message_id": row["telegram_message_id"], "author": row["author_username"], "sent_at": row["sent_at"]},
+                metadata,
             )
         )
     return db.upsert_chunks(chunks)
