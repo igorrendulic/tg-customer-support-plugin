@@ -19,6 +19,8 @@ scripts/tg-support search "password reset complaints"
 
 Exact Telegram author usernames can also be searched through normal `search`; use the returned Telegram evidence rather than treating a username match as a standalone user record.
 
+Search may return Support Exchange evidence. When it does, keep requester, configured operator reply, peer/community reply, and unanswered roles separate in the answer. Use operator replies as support evidence, describe peer/community replies as community context, and treat unanswered exchanges as unresolved needs rather than facts.
+
 For analytics questions that turn into product-behavior or debugging claims, run `repo-evidence` for the behavior claim and cite Repository Evidence ahead of Manual Knowledge Notes, Telegram evidence, and web evidence. Do not run repository lookup for normal volume, activity, or theme analytics.
 
 If `search` returns non-empty `conflicts`, show the Manual Knowledge Note, older evidence, and fresher evidence to the operator before answering. Ask which source should guide the answer when the conflict changes the conclusion.

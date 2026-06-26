@@ -37,6 +37,7 @@ class SupportConfig:
     chat: str
     seeds: tuple[SeedConfig, ...]
     repository: RepositoryConfig | None = None
+    operator_identities: tuple[str, ...] = ()
     profile: str = DEFAULT_PROFILE
     history_limit: int = 1000
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
@@ -78,6 +79,27 @@ def normalize_chat_identifier(value: str) -> str:
     if not raw:
         raise ConfigError("Telegram chat identifier is empty after normalization.")
     return raw
+
+
+def normalize_operator_identity(value: str) -> str:
+    identity = value.strip().removeprefix("@").casefold()
+    if not identity:
+        raise ConfigError("Operator identity cannot be blank.")
+    return identity
+
+
+def normalize_operator_identities(values: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    if not values:
+        return ()
+    identities = []
+    seen = set()
+    for value in values:
+        identity = normalize_operator_identity(str(value))
+        if identity in seen:
+            continue
+        identities.append(identity)
+        seen.add(identity)
+    return tuple(identities)
 
 
 def canonicalize_url(value: str) -> str:
@@ -170,10 +192,12 @@ def config_from_dict(data: dict[str, Any], profile_dir_override: Path | None = N
     embedding_model = str(data.get("embedding_model", DEFAULT_EMBEDDING_MODEL))
     if embedding_model != DEFAULT_EMBEDDING_MODEL:
         raise ConfigError(f"Unsupported embedding model: {embedding_model}")
+    operator_identities = normalize_operator_identities(data.get("operator_identities") or [])
     return SupportConfig(
         chat=chat,
         seeds=tuple(seeds),
         repository=repository,
+        operator_identities=operator_identities,
         profile=profile,
         history_limit=int(data.get("history_limit", 1000)),
         embedding_model=embedding_model,
@@ -191,6 +215,7 @@ def write_config(config: SupportConfig) -> Path:
         "history_limit": config.history_limit,
         "embedding_model": config.embedding_model,
         "vector_mode": config.vector_mode,
+        "operator_identities": list(config.operator_identities),
         "seeds": [seed.__dict__ for seed in config.seeds],
     }
     if config.repository is not None:

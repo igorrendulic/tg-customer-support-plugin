@@ -129,6 +129,15 @@ scripts/tg-support --profile default setup \
   --seed https://example.com/blog
 ```
 
+Optionally add one or more operator identities so Support Exchanges can distinguish configured support answers from peer/community replies:
+
+```bash
+scripts/tg-support --profile default setup \
+  --chat my-support-chat \
+  --operator igormailio \
+  --operator Igor
+```
+
 Optionally add a GitHub repository and branch for code-grounded behavior or debugging answers. The branch defaults to `main` when omitted. This uses your existing local `git` or `gh` authentication; do not paste GitHub credentials into the support workflow.
 
 ```bash
@@ -151,7 +160,7 @@ scripts/tg-support --profile default status
 
 `crawl` follows same-scope links two levels deep by default. Use `--depth 0` to crawl only configured seed URLs.
 
-`index` creates source-linked documents, an FTS5 exact-term index, and a 384-dimensional sqlite-vec vector index for `BAAI/bge-small-en-v1.5`. If the retrieval dependencies, embedding model, or local SQLite extension loading are not available, the command returns JSON with `ok: false`, the SQLite version when relevant, and `next_action` instead of silently falling back to weaker search.
+`index` creates source-linked documents, Support Exchanges, an FTS5 exact-term index, and a 384-dimensional sqlite-vec vector index for `BAAI/bge-small-en-v1.5`. Support Exchanges separate requester text, configured operator replies, peer/community replies, and unanswered questions so adjacent chat messages are not treated as one author's document. If the retrieval dependencies, embedding model, or local SQLite extension loading are not available, the command returns JSON with `ok: false`, the SQLite version when relevant, and `next_action` instead of silently falling back to weaker search.
 
 Ask questions or prepare a reply draft:
 
@@ -166,6 +175,8 @@ scripts/tg-support --profile default draft-create --message-id 123 --text "Thank
 Repository Evidence is live and branch-specific rather than indexed. Use it for product-behavior, capability, API-behavior, or debugging questions. If the checkout cannot refresh, the CLI returns a stale warning so the agent can tell the operator that cited code may be outdated.
 
 `draft-context` returns evidence sufficiency metadata with the evidence bundle. When evidence supports a direct answer, the agent should draft the direct reply. When evidence is missing, weak, conflicting, or needs private/account-specific details, the agent should offer both a cautious evidence-limited answer and a DM follow-up asking for the missing information. DM follow-up wording is not Manual Knowledge and is not evidence.
+
+When evidence includes a Support Exchange, configured operator replies can support direct answers. Peer/community replies and unanswered exchanges are context unless corroborated by Manual Knowledge, Repository Evidence, web evidence, or another authoritative source.
 
 Save dated support knowledge through Codex after reviewing the parsed fields, or directly through the CLI after the operator has confirmed the note:
 

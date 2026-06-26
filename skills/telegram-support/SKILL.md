@@ -29,7 +29,7 @@ Before answering analytics questions, searching, drafting, or posting, run:
 
 If `ok` is false, do not continue into the normal workflow. Use `next_action` to guide the operator through the missing setup step:
 
-- `setup`: ask for a Telegram chat identifier, whether to add optional website or blog seed URLs, and whether to add optional GitHub repository evidence configuration. Tell the operator they can skip seed setup and skip repository setup. If repository evidence is provided, pass the repository as `--repository <owner/repo-or-url-or-path>` and the branch as `--repository-branch <branch>` only when the operator provides one; the CLI defaults the branch to `main` when omitted. Then run `setup`.
+- `setup`: ask for a Telegram chat identifier, whether to add optional website or blog seed URLs, whether to add optional GitHub repository evidence configuration, and whether to add optional operator identities for authoritative support replies. Tell the operator they can skip seed setup, skip repository setup, and skip operator identity setup. If repository evidence is provided, pass the repository as `--repository <owner/repo-or-url-or-path>` and the branch as `--repository-branch <branch>` only when the operator provides one; the CLI defaults the branch to `main` when omitted. If operator identities are provided, pass each as a repeated `--operator <identity>`. Then run `setup`.
 - `credentials`: explain that Telegram API ID and API hash are needed from `https://my.telegram.org`, then run `credentials --api-id <id> --api-hash-stdin` and provide the hash on stdin after the operator provides it.
 - `login`: run `login` so the operator can complete the local Telethon user-session login.
 - `sync`: run `sync` to pull Telegram history.
@@ -40,6 +40,12 @@ If `ok` is false, do not continue into the normal workflow. Use `next_action` to
 After each setup command, run `status` again and continue from the new `next_action`. Never print or repeat the API hash back to the operator.
 
 Repository Evidence is optional. If status includes configured repository details, use them only for product-behavior, capability, API-behavior, or debugging questions. If no repository is configured, normal Telegram, web, and Manual Knowledge workflows remain ready.
+
+## Support Exchanges
+
+`index` derives Support Exchange records from Telegram history. A Support Exchange is a role-labeled question/answer unit with requester messages, configured operator replies, peer/community replies, and unanswered state separated from the surrounding chat window.
+
+When `search` or `draft-context` returns Support Exchange evidence, show the roles in the evidence summary. Operator replies can support a direct answer. Peer/community replies are useful context but are not authoritative support truth by themselves. Unanswered exchanges are unresolved user needs. If `evidence_sufficiency` includes `peer_exchange_only`, `ambiguous_exchange_authority`, or `unanswered_exchange`, show the reason and use the same cautious fallback posture as other insufficient evidence.
 
 ## Manual Knowledge
 

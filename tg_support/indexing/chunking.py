@@ -69,6 +69,53 @@ def chunk_manual_notes(db: SupportDatabase) -> int:
     return db.upsert_chunks(rows)
 
 
+def chunk_support_exchanges(db: SupportDatabase) -> int:
+    rows = []
+    db.delete_chunks_by_source_type("exchange")
+    for exchange in db.support_exchanges():
+        members = []
+        lines = []
+        for member in exchange.members:
+            label = _exchange_role_label(member.role)
+            if not member.text.strip():
+                continue
+            lines.append(f"{label} {member.author}: {member.text.strip()}")
+            members.append(
+                {
+                    "message_id": member.telegram_message_id,
+                    "author": member.author,
+                    "sent_at": member.sent_at,
+                    "text": member.text,
+                    "role": member.role,
+                    "authority": member.authority,
+                }
+            )
+        if not lines:
+            continue
+        metadata = {
+            "exchange_id": exchange.id,
+            "status": exchange.status,
+            "confidence": exchange.confidence,
+            "members": members,
+        }
+        if exchange.members:
+            metadata["sent_at"] = max(member.sent_at for member in exchange.members)
+        rows.append(("exchange", exchange.id, 0, "\n".join(lines), metadata))
+    return db.upsert_chunks(rows)
+
+
+def _exchange_role_label(role: str) -> str:
+    if role == "requester":
+        return "Requester"
+    if role == "operator_response":
+        return "Operator"
+    if role == "peer_response":
+        return "Peer"
+    if role == "ambiguous_response":
+        return "Ambiguous"
+    return "Context"
+
+
 def chunk_messages(db: SupportDatabase, window: int = 3, translation_helper: TranslationHelper | None = None) -> int:
     chunks = []
     rows = db.telegram_message_author_rows()

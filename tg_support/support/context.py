@@ -194,6 +194,48 @@ def weak_evidence(query: str, evidence: list[dict]) -> bool:
     return not bool(query_words & evidence_words)
 
 
+def authoritative_evidence_present(evidence: list[dict]) -> bool:
+    for item in evidence:
+        source_type = item.get("source_type")
+        if source_type in {"manual", "web", "repository"}:
+            return True
+        if source_type == "exchange" and item.get("metadata", {}).get("status") == "answered_by_operator":
+            return True
+    return False
+
+
+def exchange_authority_gaps(evidence: list[dict]) -> list[dict]:
+    exchange_items = [item for item in evidence if item.get("source_type") == "exchange"]
+    if not exchange_items:
+        return []
+    has_authority = authoritative_evidence_present(evidence)
+    reasons = []
+    for item in exchange_items:
+        status = item.get("metadata", {}).get("status")
+        if status == "unanswered":
+            reasons.append(
+                {
+                    "code": "unanswered_exchange",
+                    "message": "Relevant Telegram exchange evidence is unresolved and does not contain an operator answer.",
+                }
+            )
+        elif status in {"peer_response_only", "ambiguous"} and not has_authority:
+            reasons.append(
+                {
+                    "code": "peer_exchange_only" if status == "peer_response_only" else "ambiguous_exchange_authority",
+                    "message": "Returned exchange evidence is not an authoritative operator answer and needs corroborating support truth.",
+                }
+            )
+    deduped = []
+    seen = set()
+    for reason in reasons:
+        if reason["code"] in seen:
+            continue
+        deduped.append(reason)
+        seen.add(reason["code"])
+    return deduped
+
+
 def evidence_sufficiency(
     query: str,
     evidence: list[dict],
@@ -224,6 +266,7 @@ def evidence_sufficiency(
                 "message": "Manual Knowledge conflicts require operator review before treating the answer as settled.",
             }
         )
+    reasons.extend(exchange_authority_gaps(evidence))
     if username and not history:
         reasons.append(
             {

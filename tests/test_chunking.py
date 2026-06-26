@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from tg_support.indexing.chunking import TranslationHelper, chunk_manual_notes, chunk_messages, split_text
+from tg_support.indexing.chunking import TranslationHelper, chunk_manual_notes, chunk_messages, chunk_support_exchanges, split_text
+from tg_support.indexing.exchanges import rebuild_support_exchanges
 from tests.conftest import seed_display_name_author_messages, seed_messages
 
 
@@ -132,3 +133,40 @@ def test_manual_note_chunks_include_validity_metadata(db):
     assert "Old emails are quarantined" in chunk.text
     assert chunk.metadata["effective_date"] == "2026-04-02"
     assert chunk.metadata["note_id"] == note_id
+
+
+def test_support_exchange_chunks_include_structured_member_metadata(db):
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "snuglyni",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "Please delete my old account.",
+        },
+    )
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 2,
+            "author_id": 11,
+            "author_username": "igormailio",
+            "sent_at": "2026-06-01T12:01:00Z",
+            "text": "We cannot delete it from here.",
+            "reply_to_message_id": 1,
+        },
+    )
+    rebuild_support_exchanges(db, ("igormailio",))
+
+    assert chunk_support_exchanges(db) == 1
+    chunk = db.chunks()[0]
+
+    assert chunk.source_type == "exchange"
+    assert chunk.metadata["status"] == "answered_by_operator"
+    assert chunk.metadata["members"][0]["author"] == "snuglyni"
+    assert chunk.metadata["members"][0]["role"] == "requester"
+    assert chunk.metadata["members"][1]["authority"] == "operator"
+    assert "Requester snuglyni: Please delete my old account." in chunk.text
+    assert "Operator igormailio: We cannot delete it from here." in chunk.text

@@ -6,12 +6,12 @@ from pathlib import Path
 import sqlite3
 
 from tg_support.cli import main
-from tg_support.config import load_config, write_telegram_authorization
+from tg_support.config import credentials_from_dict, load_config, write_telegram_authorization, write_telegram_credentials
 from tg_support.indexing.chunking import chunk_messages
 from tg_support.indexing.embeddings import RetrievalDependencyError
 from tg_support.storage.db import SupportDatabase
 from tg_support.support.drafting import create_draft
-from tg_support.support.context import draft_context
+from tg_support.support.context import draft_context, evidence_sufficiency
 from tg_support.telegram_client import TelegramError
 from tests.conftest import (
     make_test_retriever,
@@ -57,6 +57,135 @@ def test_cli_setup_stores_optional_repository_config(tmp_path, capsys, monkeypat
     assert config.repository is not None
     assert config.repository.repository == "https://github.com/owner/project.git"
     assert config.repository.branch == "production"
+
+
+def test_cli_setup_stores_operator_identities(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    code = main(
+        [
+            "--profile",
+            "demo",
+            "setup",
+            "--chat",
+            "@support",
+            "--operator",
+            "@IgorMailio",
+            "--operator",
+            " igormailio ",
+            "--operator",
+            "Igor",
+        ]
+    )
+    assert code == 0
+    output = json.loads(capsys.readouterr().out)
+    config = load_config(tmp_path / "demo" / "config.json")
+
+    assert output["ok"] is True
+    assert config.operator_identities == ("igormailio", "igor")
+
+
+def test_status_reports_operator_identities(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    assert main(["setup", "--chat", "support", "--operator", "@igormailio", "--operator", "Igor"]) == 0
+    capsys.readouterr()
+
+    assert main(["status"]) == 0
+    output = json.loads(capsys.readouterr().out)
+
+    assert output["operator_identities"] == ["igormailio", "igor"]
+
+
+def test_cli_setup_rejects_blank_operator_identity(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    code = main(["setup", "--chat", "support", "--operator", "   "])
+    output = json.loads(capsys.readouterr().out)
+
+    assert code == 2
+    assert output["ok"] is False
+    assert "Operator identity cannot be blank" in output["error"]
+
+
+def test_evidence_sufficiency_rejects_peer_only_exchange_as_authority():
+    sufficiency = evidence_sufficiency(
+        "passkey recovery",
+        [
+            {
+                "source_type": "exchange",
+                "text": "Peer bob: Passkey recovery is impossible.",
+                "metadata": {"status": "peer_response_only", "members": [{"authority": "peer"}]},
+            }
+        ],
+        [],
+        [],
+        [],
+        None,
+    )
+
+    assert sufficiency["state"] == "insufficient"
+    assert any(reason["code"] == "peer_exchange_only" for reason in sufficiency["reasons"])
+
+
+def test_evidence_sufficiency_allows_operator_exchange():
+    sufficiency = evidence_sufficiency(
+        "passkey recovery",
+        [
+            {
+                "source_type": "exchange",
+                "text": "Operator helper: Passkey recovery requires migration status.",
+                "metadata": {"status": "answered_by_operator", "members": [{"authority": "operator"}]},
+            }
+        ],
+        [],
+        [],
+        [],
+        None,
+    )
+
+    assert sufficiency["state"] == "direct_answerable"
+
+
+def test_evidence_sufficiency_allows_peer_exchange_with_manual_corroboration():
+    sufficiency = evidence_sufficiency(
+        "passkey recovery",
+        [
+            {
+                "source_type": "exchange",
+                "text": "Peer bob: Passkey recovery requires migration status.",
+                "metadata": {"status": "peer_response_only", "members": [{"authority": "peer"}]},
+            },
+            {
+                "source_type": "manual",
+                "text": "Passkey recovery depends on migration status.",
+                "metadata": {"note_id": 1},
+            },
+        ],
+        [],
+        [],
+        [],
+        None,
+    )
+
+    assert sufficiency["state"] == "direct_answerable"
+
+
+def test_evidence_sufficiency_flags_unanswered_exchange():
+    sufficiency = evidence_sufficiency(
+        "delete account",
+        [
+            {
+                "source_type": "exchange",
+                "text": "Requester snuglyni: Please delete my old account.",
+                "metadata": {"status": "unanswered", "members": [{"authority": "none"}]},
+            }
+        ],
+        [],
+        [],
+        [],
+        None,
+    )
+
+    assert sufficiency["state"] == "insufficient"
+    assert any(reason["code"] == "unanswered_exchange" for reason in sufficiency["reasons"])
 
 
 def test_status_reports_repository_config_without_blocking_readiness(tmp_path, capsys, monkeypatch):
@@ -186,6 +315,56 @@ def test_status_progresses_through_corpus_readiness(tmp_path, capsys, monkeypatc
     output = json.loads(capsys.readouterr().out)
     assert output["ok"] is True
     assert output["next_action"] == "ready"
+
+
+def test_index_builds_support_exchanges(tmp_path, capsys, monkeypatch):
+    patch_test_retriever(monkeypatch)
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    assert main(["setup", "--chat", "support", "--operator", "helper"]) == 0
+    config = load_config(tmp_path / "default" / "config.json")
+    db = SupportDatabase(config.db_path)
+    seed_messages(db)
+    capsys.readouterr()
+
+    assert main(["index"]) == 0
+    output = json.loads(capsys.readouterr().out)
+
+    assert output["exchange_chunks"] == 2
+    assert db.count("support_exchanges") == 2
+    assert db.count("support_exchange_messages") == 3
+
+
+def test_status_reports_stale_index_after_new_telegram_message(tmp_path, capsys, monkeypatch):
+    patch_test_retriever(monkeypatch)
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    assert main(["setup", "--chat", "support", "--operator", "helper"]) == 0
+    config = load_config(tmp_path / "default" / "config.json")
+    write_telegram_credentials(config, credentials_from_dict({"api_id": "123", "api_hash": "secret"}))
+    config.session_path.write_text("fake session")
+    write_telegram_authorization(config)
+    db = SupportDatabase(config.db_path)
+    chat_id = seed_messages(db)
+    capsys.readouterr()
+    assert main(["index"]) == 0
+    capsys.readouterr()
+    assert main(["status"]) == 0
+    assert json.loads(capsys.readouterr().out)["ok"] is True
+
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 4,
+            "author_id": 14,
+            "author_username": "newuser",
+            "sent_at": "2026-06-01T12:03:00Z",
+            "text": "New support question",
+        },
+    )
+
+    assert main(["status"]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["checks"]["index"] is False
+    assert output["next_action"] == "index"
 
 
 def test_status_skips_crawl_when_no_seeds_configured(tmp_path, capsys, monkeypatch):
@@ -683,6 +862,9 @@ def test_skill_documents_status_preflight():
     assert "fuzzy_author_candidates" in skill
     assert "target.language" in skill
     assert "translated_text" in skill
+    assert "Support Exchange" in skill
+    assert "peer/community" in skill
+    assert "unanswered" in skill
 
 
 def test_openai_agent_exposes_setup_commands():
@@ -701,6 +883,8 @@ def test_openai_agent_exposes_setup_commands():
     assert "reply_language_policy" in agent
     assert "target.language" in agent
     assert "translated_text" in agent
+    assert "exchange_authority_policy" in agent
+    assert "peer/community" in agent
 
 
 def test_reply_workflow_requires_conflict_resolution():
@@ -716,6 +900,9 @@ def test_reply_workflow_requires_conflict_resolution():
     assert "fuzzy_author_candidates" in workflow
     assert "target.language" in workflow
     assert "translated_text" in workflow
+    assert "Support Exchange" in workflow
+    assert "peer/community" in workflow
+    assert "unanswered" in workflow
 
 
 def test_claude_agent_describes_evidence_sufficiency_fallback():
@@ -727,6 +914,8 @@ def test_claude_agent_describes_evidence_sufficiency_fallback():
     assert "fuzzy_author_candidates" in agent
     assert "target.language" in agent
     assert "translated_text" in agent
+    assert "Support Exchange" in agent
+    assert "peer/community" in agent
 
 
 def test_operator_docs_describe_manual_knowledge():
@@ -742,6 +931,9 @@ def test_operator_docs_describe_manual_knowledge():
     assert "target.language" in setup
     assert "fuzzy_author_candidates" in setup
     assert "translated_text" in setup
+    assert "Support Exchanges" in setup
+    assert "peer/community" in setup
+    assert "--operator" in setup
 
 
 def test_operator_docs_describe_optional_repository_evidence():

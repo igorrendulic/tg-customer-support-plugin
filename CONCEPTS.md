@@ -49,6 +49,9 @@ Approximate matching across Telegram handle/username and display name to help op
 ### Translation Helper Context
 Derived language or translation metadata attached to Telegram evidence to help retrieval and drafting while preserving the original Telegram text as the source of truth.
 
+### Support Exchange
+A derived Telegram evidence unit that groups a requester problem with response candidates while preserving raw source message IDs, authors, timestamps, and text. Support Exchanges distinguish operator responses from peer/community responses so retrieval can show context without treating every nearby answer as authoritative support truth.
+
 ### Conflict Check
 The retrieval-time safety step that compares an applicable Manual Knowledge Note against indexed Telegram or web evidence, re-queries fresher evidence when needed, and asks the Support Operator before resolving contested support truth.
 
@@ -63,4 +66,4 @@ The recorded outcome of applying a Confirmation Token, whether posted, cancelled
 
 ## Relationships
 
-A Support Operator uses an Agent Surface, but the Agent Surface calls the Local Core rather than owning support behavior. The Local Core reads and writes a Support Profile. Repository Evidence can appear in Evidence Bundles for product-behavior or debugging questions. Manual Knowledge Notes can appear in Evidence Bundles after Conflict Checks. Visible Author Labels and Translation Helper Context can shape Telegram Evidence Bundles while preserving source traceability. Evidence Bundles inform Evidence Sufficiency, Drafts, and Fallback Draft Options. Drafts create Confirmation Tokens, and applying a Confirmation Token produces a Post Attempt.
+A Support Operator uses an Agent Surface, but the Agent Surface calls the Local Core rather than owning support behavior. The Local Core reads and writes a Support Profile. Repository Evidence can appear in Evidence Bundles for product-behavior or debugging questions. Manual Knowledge Notes can appear in Evidence Bundles after Conflict Checks. Visible Author Labels, Translation Helper Context, and Support Exchanges can shape Telegram Evidence Bundles while preserving source traceability. Evidence Bundles inform Evidence Sufficiency, Drafts, and Fallback Draft Options. Drafts create Confirmation Tokens, and applying a Confirmation Token produces a Post Attempt.
