@@ -287,7 +287,7 @@ def command_search(args: argparse.Namespace) -> int:
     if not index_ready(db):
         return emit(index_required_payload(), 2)
     try:
-        search = retriever_for_config(db, config).search_with_conflicts(args.query, limit=args.limit)
+        search = retriever_for_config(db, config).search_with_conflicts(args.query, limit=args.limit, username=args.user)
     except RetrievalDependencyError as exc:
         return emit(retrieval_error_payload(exc), 2)
     return emit({"ok": True, "results": search["evidence"], "conflicts": search["conflicts"]})
@@ -418,6 +418,7 @@ def build_parser() -> argparse.ArgumentParser:
     search = sub.add_parser("search")
     search.add_argument("query")
     search.add_argument("--limit", type=int, default=8)
+    search.add_argument("--user")
     search.set_defaults(func=command_search)
 
     repo = sub.add_parser("repo-evidence")

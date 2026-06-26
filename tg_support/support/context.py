@@ -259,7 +259,7 @@ def draft_context(
     thread = message_context(db, message_id) if message_id is not None else []
     search_query = query or " ".join(item["text"] for item in (thread or target_history))
     retriever = retriever or HybridRetriever(db)
-    search = retriever.search_with_conflicts(search_query, limit=limit)
+    search = retriever.search_with_conflicts(search_query, limit=limit, username=username)
     fuzzy_candidates = fuzzy_author_candidates(db, username, limit=limit) if username and not target_history else []
     suggestion = None
     if username and not target_history:

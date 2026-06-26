@@ -309,7 +309,7 @@ def test_search_boosts_exact_username_author_matches(tmp_path, capsys, monkeypat
     make_test_retriever(db).build()
     capsys.readouterr()
 
-    assert main(["search", "@crinx7"]) == 0
+    assert main(["search", "mailbox", "--user", "@crinx7"]) == 0
     output = json.loads(capsys.readouterr().out)
 
     assert output["ok"] is True
@@ -330,7 +330,7 @@ def test_search_cli_boosts_display_name_author_matches(tmp_path, capsys, monkeyp
     make_test_retriever(db).build()
     capsys.readouterr()
 
-    assert main(["search", "@crinx7"]) == 0
+    assert main(["search", "email already exist", "--user", "@crinx7"]) == 0
     output = json.loads(capsys.readouterr().out)
 
     assert output["ok"] is True

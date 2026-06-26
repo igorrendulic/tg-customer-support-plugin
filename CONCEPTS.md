@@ -38,10 +38,13 @@ Read-only, profile-local evidence gathered from a configured GitHub repository a
 The Support Profile-local retrieval projection that combines SQLite FTS5 exact-term search, sqlite-vec vector search, and local `BAAI/bge-small-en-v1.5` embeddings over source-linked indexed documents.
 
 ### Username Exact Match Boost
-The search-ranking behavior where an exact Telegram author username query is treated as a strong evidence signal, while still returning source-linked Telegram message or context evidence rather than a standalone user record.
+The search-ranking behavior where an exact Telegram author identity query is treated as a strong evidence signal across handle/username and display name, while still returning source-linked Telegram message or context evidence rather than a standalone user record.
 
 ### Visible Author Label
 The best local display name for a Telegram message author, resolved from Telegram username first, then stored display name, then `unknown` when no visible identity is available.
+
+### Fuzzy Author Identity Search
+Approximate matching across Telegram handle/username and display name to help operators discover likely users after exact author lookup misses. Fuzzy matches depend on index-visible identity terms and are candidate evidence for search, not draft-context target history unless an exact match or explicit disambiguation resolves the target.
 
 ### Translation Helper Context
 Derived language or translation metadata attached to Telegram evidence to help retrieval and drafting while preserving the original Telegram text as the source of truth.
