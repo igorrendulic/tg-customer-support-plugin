@@ -57,6 +57,8 @@ When `search` or `draft-context` returns Manual Knowledge Note evidence, include
 
 When `draft-context` returns `evidence_sufficiency`, show the sufficiency state and reasons in the evidence summary. If `direct_answer_supported` is false, present two draft options before creating a draft: a cautious evidence-limited answer and a DM follow-up asking only for the missing support-blocking information. Do not save the DM follow-up wording as Manual Knowledge and do not treat it as evidence.
 
+When `draft-context` returns `fuzzy_author_candidates`, treat them as disambiguation options only. Do not use fuzzy candidates as target history; ask the operator to choose or rerun with an exact username/display name before drafting as that user.
+
 When `draft-context` returns `target.language`, draft the reply in that language unless the operator asks otherwise. Treat `translated_text` fields as helper context for understanding evidence, not as support truth and not as a reason to answer in English. If the target language is uncertain, show the language assumption before creating or posting the draft.
 
 ## Repository Evidence

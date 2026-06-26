@@ -113,6 +113,50 @@ def test_telegram_author_documents_match_display_name_when_username_empty(db):
     assert documents[0].metadata["author"] == "crinx7"
 
 
+def test_telegram_author_documents_match_display_name_when_username_exists(db):
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "helper123",
+            "author_name": "Anon",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "I cannot access my mailbox",
+        },
+    )
+    chunk_messages(db, window=0)
+    db.rebuild_documents()
+
+    documents = db.telegram_documents_by_author_username("Anon")
+
+    assert documents
+    assert documents[0].metadata["author"] == "helper123"
+    assert documents[0].metadata["author_identities"] == ["helper123", "Anon"]
+
+
+def test_rebuild_documents_indexes_author_identity_terms(db):
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "helper123",
+            "author_name": "Anon",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "I cannot access my mailbox",
+        },
+    )
+    chunk_messages(db, window=0)
+    db.rebuild_documents()
+
+    document = db.search_fts('"Anon"', 3)[0][0]
+
+    assert document.metadata["author_identities"] == ["helper123", "Anon"]
+
+
 def test_rebuild_documents_indexes_translation_without_replacing_text(db):
     chunk_id = db.upsert_chunk(
         "telegram",

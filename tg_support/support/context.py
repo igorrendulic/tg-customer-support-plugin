@@ -83,12 +83,31 @@ def user_history(db: SupportDatabase, username: str, limit: int = 5) -> list[dic
             FROM messages m
             LEFT JOIN users u ON u.id = m.author_id
             WHERE lower(m.author_username) = ?
-               OR (NULLIF(m.author_username, '') IS NULL AND lower(u.display_name) = ?)
+               OR lower(u.username) = ?
+               OR lower(u.display_name) = ?
             ORDER BY sent_at DESC LIMIT ?
             """,
-            (normalized, normalized, limit),
+            (normalized, normalized, normalized, limit),
         ).fetchall()
     return annotate_message_rows([dict(row) for row in rows])
+
+
+def fuzzy_author_candidates(db: SupportDatabase, username: str, limit: int = 5) -> list[dict]:
+    documents = db.telegram_documents_by_fuzzy_author_identity(username, limit=limit)
+    candidates = []
+    for document in documents:
+        identities = document.metadata.get("author_identities") or []
+        candidates.append(
+            {
+                "author": document.metadata.get("author"),
+                "author_identities": identities,
+                "message_id": document.metadata.get("message_id"),
+                "sent_at": document.metadata.get("sent_at"),
+                "text": document.text,
+                "document_id": document.id,
+            }
+        )
+    return candidates
 
 
 def message_context(db: SupportDatabase, message_id: int, window: int = 3) -> list[dict]:
@@ -240,10 +259,14 @@ def draft_context(
     thread = message_context(db, message_id) if message_id is not None else []
     search_query = query or " ".join(item["text"] for item in (thread or target_history))
     retriever = retriever or HybridRetriever(db)
-    search = retriever.search_with_conflicts(search_query, limit=limit)
+    search = retriever.search_with_conflicts(search_query, limit=limit, username=username)
+    fuzzy_candidates = fuzzy_author_candidates(db, username, limit=limit) if username and not target_history else []
     suggestion = None
     if username and not target_history:
-        suggestion = "No local history for this user. Run sync, search by message ID, or broaden the query."
+        if fuzzy_candidates:
+            suggestion = "No exact local history for this user. Review fuzzy author candidates and rerun with an exact identity."
+        else:
+            suggestion = "No local history for this user. Run sync, search by message ID, or broaden the query."
     sufficiency = evidence_sufficiency(
         search_query,
         search["evidence"],
@@ -258,6 +281,7 @@ def draft_context(
         "history": target_history,
         "thread": thread,
         "evidence": search["evidence"],
+        "fuzzy_author_candidates": fuzzy_candidates,
         "conflicts": search["conflicts"],
         "evidence_sufficiency": sufficiency,
         "suggestion": suggestion,

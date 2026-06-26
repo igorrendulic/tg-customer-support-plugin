@@ -309,7 +309,7 @@ def test_search_boosts_exact_username_author_matches(tmp_path, capsys, monkeypat
     make_test_retriever(db).build()
     capsys.readouterr()
 
-    assert main(["search", "@crinx7"]) == 0
+    assert main(["search", "mailbox", "--user", "@crinx7"]) == 0
     output = json.loads(capsys.readouterr().out)
 
     assert output["ok"] is True
@@ -330,7 +330,7 @@ def test_search_cli_boosts_display_name_author_matches(tmp_path, capsys, monkeyp
     make_test_retriever(db).build()
     capsys.readouterr()
 
-    assert main(["search", "@crinx7"]) == 0
+    assert main(["search", "email already exist", "--user", "@crinx7"]) == 0
     output = json.loads(capsys.readouterr().out)
 
     assert output["ok"] is True
@@ -495,6 +495,57 @@ def test_draft_context_for_display_name_only_user(db, monkeypatch):
     assert "missing_user_history" not in {reason["code"] for reason in context["evidence_sufficiency"]["reasons"]}
 
 
+def test_draft_context_for_display_name_user_with_username(db, monkeypatch):
+    patch_test_retriever(monkeypatch)
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "helper123",
+            "author_name": "Anon",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "I cannot access my mailbox",
+        },
+    )
+    chunk_messages(db, window=0)
+    make_test_retriever(db).build()
+
+    context = draft_context(db, "mailbox", username="Anon")
+
+    assert context["history"]
+    assert context["history"][0]["author_label"] == "helper123"
+    assert context["fuzzy_author_candidates"] == []
+    assert "missing_user_history" not in {reason["code"] for reason in context["evidence_sufficiency"]["reasons"]}
+
+
+def test_draft_context_keeps_fuzzy_author_candidates_out_of_target_history(db, monkeypatch):
+    patch_test_retriever(monkeypatch)
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "helper123",
+            "author_name": "Anon",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "I cannot access my mailbox",
+        },
+    )
+    chunk_messages(db, window=0)
+    make_test_retriever(db).build()
+
+    context = draft_context(db, "mailbox", username="Ano")
+
+    assert context["history"] == []
+    assert context["fuzzy_author_candidates"]
+    assert context["fuzzy_author_candidates"][0]["author"] == "helper123"
+    assert "missing_user_history" in {reason["code"] for reason in context["evidence_sufficiency"]["reasons"]}
+    assert "exact identity" in context["suggestion"]
+
+
 def test_draft_context_exposes_target_language_from_user_history(db, monkeypatch):
     patch_test_retriever(monkeypatch)
     chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
@@ -629,6 +680,7 @@ def test_skill_documents_status_preflight():
     assert "evidence_sufficiency" in skill
     assert "DM follow-up" in skill
     assert "Do not save the DM follow-up wording as Manual Knowledge" in skill
+    assert "fuzzy_author_candidates" in skill
     assert "target.language" in skill
     assert "translated_text" in skill
 
@@ -645,6 +697,7 @@ def test_openai_agent_exposes_setup_commands():
     assert "evidence_sufficiency" in agent
     assert "direct_answer_supported" in agent
     assert "DM follow-up" in agent
+    assert "fuzzy_author_policy" in agent
     assert "reply_language_policy" in agent
     assert "target.language" in agent
     assert "translated_text" in agent
@@ -660,6 +713,7 @@ def test_reply_workflow_requires_conflict_resolution():
     assert "direct_answer_supported" in workflow
     assert "cautious evidence-limited answer" in workflow
     assert "DM follow-up" in workflow
+    assert "fuzzy_author_candidates" in workflow
     assert "target.language" in workflow
     assert "translated_text" in workflow
 
@@ -670,6 +724,7 @@ def test_claude_agent_describes_evidence_sufficiency_fallback():
     assert "direct_answer_supported" in agent
     assert "DM follow-up" in agent
     assert "Manual Knowledge" in agent
+    assert "fuzzy_author_candidates" in agent
     assert "target.language" in agent
     assert "translated_text" in agent
 
@@ -685,6 +740,7 @@ def test_operator_docs_describe_manual_knowledge():
     assert "Evidence Sufficiency And Reply Fallbacks" in setup
     assert "Fallback Draft Option" in setup
     assert "target.language" in setup
+    assert "fuzzy_author_candidates" in setup
     assert "translated_text" in setup
 
 

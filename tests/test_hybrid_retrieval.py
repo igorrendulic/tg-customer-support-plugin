@@ -58,7 +58,7 @@ def test_exact_username_author_match_is_boosted_above_text_mentions(db):
     retriever = make_test_retriever(db)
     retriever.build()
 
-    results = retriever.search("crinx7", limit=3)
+    results = retriever.search("mailbox", username="crinx7", limit=3)
 
     assert results[0]["source_type"] == "telegram"
     assert results[0]["metadata"]["author"] == "Crinx7"
@@ -71,7 +71,7 @@ def test_display_name_author_match_is_boosted_when_username_missing(db):
     retriever = make_test_retriever(db)
     retriever.build()
 
-    results = retriever.search("crinx7", limit=3)
+    results = retriever.search("email already exist", username="crinx7", limit=3)
 
     assert results[0]["source_type"] == "telegram"
     assert results[0]["metadata"]["author"] == "crinx7"
@@ -84,7 +84,7 @@ def test_display_name_author_match_accepts_at_prefix(db):
     retriever = make_test_retriever(db)
     retriever.build()
 
-    results = retriever.search("@crinx7", limit=3)
+    results = retriever.search("email already exist", username="@crinx7", limit=3)
 
     assert results[0]["metadata"]["author"] == "crinx7"
 
@@ -95,9 +95,214 @@ def test_at_prefixed_username_matches_author_metadata(db):
     retriever = make_test_retriever(db)
     retriever.build()
 
-    results = retriever.search("@crinx7", limit=3)
+    results = retriever.search("mailbox", username="@crinx7", limit=3)
 
     assert results[0]["metadata"]["author"] == "Crinx7"
+
+
+def test_exact_display_name_match_works_when_username_exists(db):
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "helper123",
+            "author_name": "Anon",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "I cannot access my mailbox",
+        },
+    )
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 2,
+            "author_id": 11,
+            "author_username": "helper",
+            "sent_at": "2026-06-01T12:01:00Z",
+            "text": "Anon was mentioned in a different support thread",
+        },
+    )
+    chunk_messages(db, window=0)
+    retriever = make_test_retriever(db)
+    retriever.build()
+
+    results = retriever.search("mailbox", username="Anon", limit=3)
+
+    assert results[0]["metadata"]["author"] == "helper123"
+    assert results[0]["metadata"]["author_identities"] == ["helper123", "Anon"]
+    assert "mailbox" in results[0]["text"]
+
+
+def test_exact_display_name_match_accepts_spaces(db):
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "helper123",
+            "author_name": "Anon Helper",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "I cannot access my mailbox",
+        },
+    )
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 2,
+            "author_id": 11,
+            "author_username": "helper",
+            "sent_at": "2026-06-01T12:01:00Z",
+            "text": "Anon Helper was mentioned in a different support thread",
+        },
+    )
+    chunk_messages(db, window=0)
+    retriever = make_test_retriever(db)
+    retriever.build()
+
+    results = retriever.search("mailbox", username="Anon Helper", limit=3)
+
+    assert results[0]["metadata"]["author"] == "helper123"
+    assert results[0]["metadata"]["author_identities"] == ["helper123", "Anon Helper"]
+
+
+def test_exact_author_side_channel_does_not_exclude_normal_evidence(db):
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "passkey",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "I cannot access my mailbox",
+        },
+    )
+    db.upsert_page("https://example.com/passkeys", "Passkeys", "Passkey setup and login troubleshooting guide.")
+    chunk_messages(db, window=0)
+    chunk_pages(db)
+    retriever = make_test_retriever(db)
+    retriever.build()
+
+    results = retriever.search("passkey", username="passkey", limit=3)
+
+    assert results[0]["metadata"]["author"] == "passkey"
+    assert any(result["source_type"] == "web" and "Passkey setup" in result["text"] for result in results)
+
+
+def test_fuzzy_author_identity_fallback_runs_only_after_exact_miss(db):
+    chat_id = db.upsert_chat("support", "100", "Support", "supergroup")
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 1,
+            "author_id": 10,
+            "author_username": "helper123",
+            "author_name": "Anon",
+            "sent_at": "2026-06-01T12:00:00Z",
+            "text": "I cannot access my mailbox",
+        },
+    )
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 2,
+            "author_id": 11,
+            "author_username": "Ann",
+            "sent_at": "2026-06-01T12:01:00Z",
+            "text": "Exact author message about passkeys",
+        },
+    )
+    chunk_messages(db, window=0)
+    retriever = make_test_retriever(db)
+    retriever.build()
+
+    exact_results = retriever.search("passkeys", username="Ann", limit=3)
+    fuzzy_results = retriever.search("mailbox", username="Ano", limit=3)
+
+    assert exact_results[0]["metadata"]["author"] == "Ann"
+    assert fuzzy_results[0]["metadata"]["author"] == "helper123"
+
+
+def test_blank_search_skips_author_lookup(db):
+    seed_messages(db)
+    chunk_messages(db, window=0)
+    retriever = make_test_retriever(db)
+    retriever.build()
+    calls = []
+
+    def fail_exact(_author_identity):
+        calls.append("exact")
+        raise AssertionError("blank query should not run exact author lookup")
+
+    def fail_fuzzy(_author_identity):
+        calls.append("fuzzy")
+        raise AssertionError("blank query should not run fuzzy author lookup")
+
+    retriever._username_author_matches = fail_exact
+    retriever._fuzzy_author_matches = fail_fuzzy
+
+    assert retriever.search("   ") == []
+    assert calls == []
+
+
+def test_username_can_drive_author_search_without_query_text(db):
+    seed_username_search_messages(db)
+    chunk_messages(db, window=0)
+    retriever = make_test_retriever(db)
+    retriever.build()
+
+    results = retriever.search("", username="crinx7", limit=3)
+
+    assert results[0]["metadata"]["author"] == "Crinx7"
+    assert "I cannot access my mailbox" in results[0]["text"]
+
+
+def test_query_without_username_skips_author_lookup(db):
+    seed_messages(db)
+    db.upsert_page("https://example.com/policy", "Policy", "Passkey-reset policy.")
+    chunk_messages(db, window=0)
+    chunk_pages(db)
+    retriever = make_test_retriever(db)
+    retriever.build()
+    calls = []
+
+    def fail_exact(_author_identity):
+        calls.append("exact")
+        raise AssertionError("query-only search should not run exact author lookup")
+
+    def fail_fuzzy(_author_identity):
+        calls.append("fuzzy")
+        raise AssertionError("query-only search should not run fuzzy author lookup")
+
+    retriever._username_author_matches = fail_exact
+    retriever._fuzzy_author_matches = fail_fuzzy
+
+    results = retriever.search("passkey-reset: policy?", limit=3)
+
+    assert results
+    assert calls == []
+
+
+def test_exact_author_match_skips_fuzzy_lookup(db):
+    seed_username_search_messages(db)
+    chunk_messages(db, window=0)
+    retriever = make_test_retriever(db)
+    retriever.build()
+    fuzzy_calls = []
+    original_fuzzy = retriever._fuzzy_author_matches
+
+    def track_fuzzy(author_identity):
+        fuzzy_calls.append(author_identity)
+        return original_fuzzy(author_identity)
+
+    retriever._fuzzy_author_matches = track_fuzzy
+
+    results = retriever.search("mailbox", username="crinx7", limit=3)
+
+    assert results[0]["metadata"]["author"] == "Crinx7"
+    assert fuzzy_calls == []
 
 
 class FakeTranslationHelper:
@@ -134,7 +339,7 @@ def test_username_boost_does_not_replace_result_shape(db):
     retriever = make_test_retriever(db)
     retriever.build()
 
-    result = retriever.search("crinx7", limit=1)[0]
+    result = retriever.search("mailbox", username="crinx7", limit=1)[0]
 
     assert {"chunk_id", "document_id", "source_type", "source_id", "score", "text", "metadata", "source_updated_at"} == set(result)
     assert result["source_type"] == "telegram"
@@ -156,7 +361,7 @@ def test_multiple_username_author_matches_prefer_recent_messages(db):
     retriever = make_test_retriever(db)
     retriever.build()
 
-    results = retriever.search("crinx7", limit=3)
+    results = retriever.search("recovery keys", username="crinx7", limit=3)
 
     assert results[0]["metadata"]["author"] == "Crinx7"
     assert "Follow up about recovery keys" in results[0]["text"]
