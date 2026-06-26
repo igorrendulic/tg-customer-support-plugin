@@ -82,6 +82,13 @@ def index_required_payload() -> dict:
     return {"ok": False, "error": "Search index has not been built.", "next_action": "index"}
 
 
+def non_negative_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be non-negative")
+    return parsed
+
+
 def index_ready(db: SupportDatabase) -> bool:
     return table_count(db, "documents") > 0
 
@@ -133,6 +140,7 @@ def profile_status(config: SupportConfig) -> dict:
     session_present = config.session_path.exists() and config.authorization_path.exists()
     messages = table_count(db, "messages") if database_ok else 0
     pages = usable_page_count(db) if database_ok else 0
+    web_crawl_ready = not config.seeds or pages > 0
     chunks = table_count(db, "chunks") if database_ok else 0
     index_stale = True
     if chunks:
@@ -147,7 +155,7 @@ def profile_status(config: SupportConfig) -> dict:
         "credentials": credentials_valid,
         "telegram_session": session_present,
         "telegram_history": messages > 0,
-        "web_crawl": pages > 0,
+        "web_crawl": web_crawl_ready,
         "chunks": chunks > 0,
         "index": chunks > 0 and not index_stale,
     }
@@ -181,14 +189,14 @@ def profile_status(config: SupportConfig) -> dict:
 
 
 def command_setup(args: argparse.Namespace) -> int:
-    if not args.chat or not args.seed:
-        return emit({"ok": False, "error": "setup requires --chat and at least one --seed"}, 2)
+    if not args.chat:
+        return emit({"ok": False, "error": "setup requires --chat"}, 2)
     try:
         config = config_from_dict(
             {
                 "profile": args.profile,
                 "chat": args.chat,
-                "seeds": [{"url": seed, "render": args.render} for seed in args.seed],
+                "seeds": [{"url": seed, "render": args.render} for seed in args.seed or []],
                 "repository": None
                 if not args.repository
                 else {"repository": args.repository, "branch": args.repository_branch},
@@ -233,7 +241,7 @@ def command_status(args: argparse.Namespace) -> int:
 def command_crawl(args: argparse.Namespace) -> int:
     config, db = db_for_args(args, initialize=True)
     crawler = WebCrawler(db)
-    results = [crawler.crawl_seed(seed).__dict__ for seed in config.seeds]
+    results = [result.__dict__ for seed in config.seeds for result in crawler.crawl_seed_deep(seed, max_depth=args.depth)]
     return emit({"ok": True, "results": results})
 
 
@@ -387,7 +395,7 @@ def build_parser() -> argparse.ArgumentParser:
     setup.add_argument("--seed", action="append")
     setup.add_argument("--render", choices=["auto", "always", "never"], default="auto")
     setup.add_argument("--repository")
-    setup.add_argument("--repository-branch", default="production")
+    setup.add_argument("--repository-branch", default="main")
     setup.add_argument("--history-limit", type=int, default=1000)
     setup.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
     setup.set_defaults(func=command_setup)
@@ -398,7 +406,9 @@ def build_parser() -> argparse.ArgumentParser:
     credentials.set_defaults(func=command_credentials)
 
     sub.add_parser("status").set_defaults(func=command_status)
-    sub.add_parser("crawl").set_defaults(func=command_crawl)
+    crawl = sub.add_parser("crawl")
+    crawl.add_argument("--depth", type=non_negative_int, default=2)
+    crawl.set_defaults(func=command_crawl)
     sub.add_parser("login").set_defaults(func=command_login)
     sync = sub.add_parser("sync")
     sync.add_argument("--limit", type=int)

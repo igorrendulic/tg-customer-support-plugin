@@ -29,7 +29,7 @@ Before answering analytics questions, searching, drafting, or posting, run:
 
 If `ok` is false, do not continue into the normal workflow. Use `next_action` to guide the operator through the missing setup step:
 
-- `setup`: ask for a Telegram chat identifier, at least one website or blog seed, and whether to add optional GitHub repository evidence configuration. Tell the operator they can skip repository setup. If provided, pass the repository as `--repository <owner/repo-or-url-or-path>` and the branch as `--repository-branch <branch>`; default the branch to `production` when omitted. Then run `setup`.
+- `setup`: ask for a Telegram chat identifier, whether to add optional website or blog seed URLs, and whether to add optional GitHub repository evidence configuration. Tell the operator they can skip seed setup and skip repository setup. If repository evidence is provided, pass the repository as `--repository <owner/repo-or-url-or-path>` and the branch as `--repository-branch <branch>` only when the operator provides one; the CLI defaults the branch to `main` when omitted. Then run `setup`.
 - `credentials`: explain that Telegram API ID and API hash are needed from `https://my.telegram.org`, then run `credentials --api-id <id> --api-hash-stdin` and provide the hash on stdin after the operator provides it.
 - `login`: run `login` so the operator can complete the local Telethon user-session login.
 - `sync`: run `sync` to pull Telegram history.

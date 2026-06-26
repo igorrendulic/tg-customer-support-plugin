@@ -5,7 +5,7 @@ This companion surface uses the same local CLI as the Codex plugin. It does not 
 ## Setup
 
 ```bash
-scripts/tg-support setup --chat <telegram-chat> --seed <website-or-blog-url>
+scripts/tg-support setup --chat <telegram-chat> [--seed <website-or-blog-url>]
 scripts/tg-support login
 scripts/tg-support sync
 scripts/tg-support crawl

@@ -17,7 +17,7 @@ The shared implementation boundary that owns Telegram access, crawling, storage,
 The operator-owned local state boundary for one configured support workflow, including configuration, Telegram session state, SQLite data, and rebuildable indexes.
 
 ### Ready Profile
-A Support Profile that has the required configuration, profile-local Telegram credentials, a usable Telegram session, synced Telegram history, crawled web seeds, and built indexes for normal support workflows.
+A Support Profile that has the required configuration, profile-local Telegram credentials, a usable Telegram session, synced Telegram history, any configured optional sources prepared, and built indexes for normal support workflows.
 
 ### Evidence Bundle
 The source-linked retrieval result set an agent uses to answer analytics questions or prepare a reply draft, including any Manual Knowledge Notes that influence the answer.
@@ -26,7 +26,7 @@ The source-linked retrieval result set an agent uses to answer analytics questio
 A Support Operator-confirmed local corpus entry for dated support facts, policy changes, operational caveats, or other durable knowledge that may override or reinterpret older Telegram and web evidence within an effective or expiry window.
 
 ### Repository Evidence
-Read-only, profile-local evidence gathered from a configured GitHub repository and branch during product-behavior or debugging support questions. Repository Evidence from the configured production branch outranks Manual Knowledge Notes, Telegram evidence, and web evidence when sources disagree.
+Read-only, profile-local evidence gathered from a configured GitHub repository and branch during product-behavior or debugging support questions. Repository Evidence from the configured branch outranks Manual Knowledge Notes, Telegram evidence, and web evidence when sources disagree.
 
 ### SQLite Hybrid Search Index
 The Support Profile-local retrieval projection that combines SQLite FTS5 exact-term search, sqlite-vec vector search, and local `BAAI/bge-small-en-v1.5` embeddings over source-linked indexed documents.

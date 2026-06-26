@@ -22,6 +22,16 @@ class Fetcher:
         return Response(self.html)
 
 
+class URLFetcher:
+    def __init__(self, pages):
+        self.pages = pages
+        self.urls = []
+
+    def get(self, url, timeout=20):
+        self.urls.append(url)
+        return Response(self.pages[url])
+
+
 class Renderer:
     def __init__(self):
         self.called = False
@@ -39,6 +49,20 @@ def test_static_page_is_persisted(db):
     assert db.count("pages") == 1
 
 
+def test_extract_page_ignores_non_http_links(db):
+    html = """
+    <html><title>Docs</title><body><main>Password reset instructions for users.</main>
+    <a href="mailto:support@example.com">Email</a>
+    <a href="tel:+15555550123">Call</a>
+    <a href="/docs/reset">Reset</a>
+    </body></html>
+    """
+    result = WebCrawler(db, Fetcher(html), Renderer()).crawl_seed(SeedConfig("https://example.com/docs"))
+
+    assert result.status == "ok"
+    assert result.discovered == ("https://example.com/docs/reset",)
+
+
 def test_app_shell_triggers_renderer_in_auto_mode(db):
     renderer = Renderer()
     html = "<html><body><div id='root'></div><script src='/assets/app.js'></script></body></html>"
@@ -53,3 +77,50 @@ def test_render_never_does_not_call_renderer(db):
     html = "<html><body><div id='root'></div><script src='/assets/app.js'></script></body></html>"
     WebCrawler(db, Fetcher(html), renderer).crawl_seed(SeedConfig("https://example.com/blog", render="never"))
     assert renderer.called is False
+
+
+def test_deep_crawl_follows_in_scope_links_to_depth(db):
+    fetcher = URLFetcher(
+        {
+            "https://example.com/docs": "<html><title>Root</title><body><main>Root docs page with useful support content.</main><a href='/docs/a'>A</a><a href='/outside'>Outside</a></body></html>",
+            "https://example.com/docs/a": "<html><title>A</title><body><main>Level one support documentation content.</main><a href='/docs/b'>B</a></body></html>",
+            "https://example.com/docs/b": "<html><title>B</title><body><main>Level two support documentation content.</main><a href='/docs/c'>C</a></body></html>",
+        }
+    )
+
+    results = WebCrawler(db, fetcher, Renderer()).crawl_seed_deep(SeedConfig("https://example.com/docs"), max_depth=2)
+
+    assert [result.url for result in results] == [
+        "https://example.com/docs",
+        "https://example.com/docs/a",
+        "https://example.com/docs/b",
+    ]
+    assert db.count("pages") == 3
+
+
+def test_deep_crawl_does_not_follow_sibling_prefix_paths(db):
+    fetcher = URLFetcher(
+        {
+            "https://example.com/docs": "<html><title>Root</title><body><main>Root docs page with useful support content.</main><a href='/docs/a'>A</a><a href='/docs-old'>Old</a></body></html>",
+            "https://example.com/docs/a": "<html><title>A</title><body><main>Level one support documentation content.</main></body></html>",
+        }
+    )
+
+    results = WebCrawler(db, fetcher, Renderer()).crawl_seed_deep(SeedConfig("https://example.com/docs"), max_depth=2)
+
+    assert [result.url for result in results] == ["https://example.com/docs", "https://example.com/docs/a"]
+    assert "https://example.com/docs-old" not in fetcher.urls
+
+
+def test_deep_crawl_deduplicates_links(db):
+    fetcher = URLFetcher(
+        {
+            "https://example.com/docs": "<html><title>Root</title><body><main>Root docs page with useful support content.</main><a href='/docs/a'>A1</a><a href='/docs/a/'>A2</a></body></html>",
+            "https://example.com/docs/a": "<html><title>A</title><body><main>Level one support documentation content.</main><a href='/docs'>Root</a></body></html>",
+        }
+    )
+
+    results = WebCrawler(db, fetcher, Renderer()).crawl_seed_deep(SeedConfig("https://example.com/docs"), max_depth=2)
+
+    assert [result.url for result in results] == ["https://example.com/docs", "https://example.com/docs/a"]
+    assert fetcher.urls == ["https://example.com/docs", "https://example.com/docs/a"]
