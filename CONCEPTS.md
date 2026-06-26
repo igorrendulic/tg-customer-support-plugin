@@ -22,6 +22,12 @@ A Support Profile that has the required configuration, profile-local Telegram cr
 ### Evidence Bundle
 The source-linked retrieval result set an agent uses to answer analytics questions or prepare a reply draft, including any Manual Knowledge Notes that influence the answer.
 
+### Evidence Sufficiency
+The support-drafting judgment that collected evidence is strong enough to support a direct reply without pretending missing, weak, conflicting, stale, vague, or account-specific context is known.
+
+### Fallback Draft Option
+An operator-visible draft alternative generated when evidence is insufficient, such as a cautious limited answer or a request for the Support User to provide missing private or account-specific information by DM. Fallback Draft Options shape replies but are not support truth.
+
 ### Manual Knowledge Note
 A Support Operator-confirmed local corpus entry for dated support facts, policy changes, operational caveats, or other durable knowledge that may override or reinterpret older Telegram and web evidence within an effective or expiry window.
 
@@ -45,4 +51,4 @@ The recorded outcome of applying a Confirmation Token, whether posted, cancelled
 
 ## Relationships
 
-A Support Operator uses an Agent Surface, but the Agent Surface calls the Local Core rather than owning support behavior. The Local Core reads and writes a Support Profile. Repository Evidence can appear in Evidence Bundles for product-behavior or debugging questions. Manual Knowledge Notes can appear in Evidence Bundles after Conflict Checks. Evidence Bundles inform Drafts, Drafts create Confirmation Tokens, and applying a Confirmation Token produces a Post Attempt.
+A Support Operator uses an Agent Surface, but the Agent Surface calls the Local Core rather than owning support behavior. The Local Core reads and writes a Support Profile. Repository Evidence can appear in Evidence Bundles for product-behavior or debugging questions. Manual Knowledge Notes can appear in Evidence Bundles after Conflict Checks. Evidence Bundles inform Evidence Sufficiency, Drafts, and Fallback Draft Options. Drafts create Confirmation Tokens, and applying a Confirmation Token produces a Post Attempt.

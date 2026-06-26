@@ -13,4 +13,5 @@ commands:
   knowledge_add: "scripts/tg-support knowledge-add --text '<note>' --effective-date <YYYY-MM-DD>"
   stats: "scripts/tg-support stats <kind>"
 repository_evidence_policy: "Use repo_evidence only for product-behavior, capability, API-behavior, or debugging questions. Repository Evidence from the configured branch outranks Manual Knowledge Notes, Telegram evidence, and web evidence; show stale checkout warnings before relying on it."
-posting_policy: "Show target, exact message, evidence, repository stale warnings, and any conflicts; require explicit post/cancel confirmation before running confirm."
+draft_fallback_policy: "When draft-context returns evidence_sufficiency, show the state and reasons. If direct_answer_supported is false, or repository evidence has a stale warning, offer both a cautious evidence-limited answer and a DM follow-up for missing support-blocking details; create only the operator-selected draft."
+posting_policy: "Show target, exact message, evidence, evidence sufficiency, repository stale warnings, and any conflicts; require explicit post/cancel confirmation before running confirm."

@@ -318,6 +318,26 @@ def test_draft_context_reports_retrieval_dependency_errors(tmp_path, capsys, mon
     assert output["sqlite_version"] == sqlite3.sqlite_version
 
 
+def test_draft_context_cli_outputs_evidence_sufficiency(tmp_path, capsys, monkeypatch):
+    patch_test_retriever(monkeypatch)
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    assert main(["setup", "--chat", "support", "--seed", "example.com/blog"]) == 0
+    config = load_config(tmp_path / "default" / "config.json")
+    db = SupportDatabase(config.db_path)
+    seed_messages(db)
+    chunk_messages(db)
+    make_test_retriever(db).build()
+    capsys.readouterr()
+
+    assert main(["draft-context", "--query", "password reset", "--user", "alice"]) == 0
+    output = json.loads(capsys.readouterr().out)
+
+    sufficiency = output["context"]["evidence_sufficiency"]
+    assert sufficiency["state"] == "direct_answerable"
+    assert sufficiency["direct_answer_supported"] is True
+    assert sufficiency["fallback_recommended"] is False
+
+
 def test_status_with_session_file_but_no_authorization_still_suggests_login(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
     assert main(["setup", "--chat", "support", "--seed", "example.com/blog"]) == 0
@@ -408,6 +428,58 @@ def test_draft_context_for_known_user(db, monkeypatch):
     context = draft_context(db, "password reset", username="alice")
     assert context["history"]
     assert context["target"]["username"] == "alice"
+    assert context["evidence_sufficiency"]["state"] == "direct_answerable"
+    assert context["evidence_sufficiency"]["direct_answer_supported"] is True
+    assert context["evidence_sufficiency"]["fallback_recommended"] is False
+
+
+def test_draft_context_reports_no_evidence_sufficiency_gap(db, monkeypatch):
+    patch_test_retriever(monkeypatch)
+
+    context = draft_context(db, "unknown account policy", retriever=make_test_retriever(db))
+
+    assert context["evidence"] == []
+    assert context["evidence_sufficiency"]["state"] == "insufficient"
+    assert context["evidence_sufficiency"]["fallback_recommended"] is True
+    assert {reason["code"] for reason in context["evidence_sufficiency"]["reasons"]} >= {
+        "no_evidence",
+        "account_specific_gap",
+    }
+
+
+def test_draft_context_reports_missing_user_history_gap(db, monkeypatch):
+    patch_test_retriever(monkeypatch)
+    seed_messages(db)
+    chunk_messages(db)
+    make_test_retriever(db).build()
+
+    context = draft_context(db, "password reset", username="missing")
+
+    assert context["suggestion"]
+    assert context["evidence_sufficiency"]["state"] == "insufficient"
+    assert "missing_user_history" in {reason["code"] for reason in context["evidence_sufficiency"]["reasons"]}
+
+
+def test_draft_context_does_not_trigger_account_gap_for_general_evidence(db, monkeypatch):
+    patch_test_retriever(monkeypatch)
+    chat_id = seed_messages(db)
+    db.insert_message(
+        chat_id,
+        {
+            "message_id": 4,
+            "author_id": 11,
+            "author_username": "helper",
+            "sent_at": "2026-06-03T12:00:00Z",
+            "text": "Account transfer is available from settings after verification.",
+        },
+    )
+    chunk_messages(db)
+    make_test_retriever(db).build()
+
+    context = draft_context(db, "account transfer settings")
+
+    assert context["evidence_sufficiency"]["state"] == "direct_answerable"
+    assert "account_specific_gap" not in {reason["code"] for reason in context["evidence_sufficiency"]["reasons"]}
 
 
 def test_skill_documents_status_preflight():
@@ -417,6 +489,9 @@ def test_skill_documents_status_preflight():
     assert "credentials --api-id <id> --api-hash-stdin" in skill
     assert "knowledge-add" in skill
     assert "conflicts" in skill
+    assert "evidence_sufficiency" in skill
+    assert "DM follow-up" in skill
+    assert "Do not save the DM follow-up wording as Manual Knowledge" in skill
 
 
 def test_openai_agent_exposes_setup_commands():
@@ -428,6 +503,9 @@ def test_openai_agent_exposes_setup_commands():
     assert "repo_evidence:" in agent
     assert "product-behavior" in agent
     assert "stale checkout warnings" in agent
+    assert "evidence_sufficiency" in agent
+    assert "direct_answer_supported" in agent
+    assert "DM follow-up" in agent
 
 
 def test_reply_workflow_requires_conflict_resolution():
@@ -436,6 +514,18 @@ def test_reply_workflow_requires_conflict_resolution():
     assert "Manual Knowledge Note" in workflow
     assert "repo-evidence" in workflow
     assert "Repository Evidence" in workflow
+    assert "evidence_sufficiency.state" in workflow
+    assert "direct_answer_supported" in workflow
+    assert "cautious evidence-limited answer" in workflow
+    assert "DM follow-up" in workflow
+
+
+def test_claude_agent_describes_evidence_sufficiency_fallback():
+    agent = Path("agents/claude.md").read_text()
+    assert "evidence_sufficiency" in agent
+    assert "direct_answer_supported" in agent
+    assert "DM follow-up" in agent
+    assert "Manual Knowledge" in agent
 
 
 def test_operator_docs_describe_manual_knowledge():
@@ -444,6 +534,10 @@ def test_operator_docs_describe_manual_knowledge():
     assert "knowledge-add" in readme
     assert "Manual Knowledge Notes" in setup
     assert "conflicts" in setup
+    assert "evidence sufficiency" in readme
+    assert "DM follow-up wording is not Manual Knowledge" in readme
+    assert "Evidence Sufficiency And Reply Fallbacks" in setup
+    assert "Fallback Draft Option" in setup
 
 
 def test_operator_docs_describe_optional_repository_evidence():
@@ -459,3 +553,5 @@ def test_operator_docs_describe_optional_repository_evidence():
     assert "--repository <owner/repo-or-url-or-path>" in skill
     assert "repo-evidence" in claude_usage
     assert "product-behavior" in claude_usage
+    assert "evidence_sufficiency" in claude_usage
+    assert "DM follow-up" in claude_usage

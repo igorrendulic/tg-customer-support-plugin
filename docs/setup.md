@@ -103,6 +103,14 @@ The command manages a profile-local checkout of the configured branch and checks
 
 Repository Evidence is live and branch-aware. It is not stored in the normal search index, because support answers about current product behavior should read the configured branch directly.
 
+## Evidence Sufficiency And Reply Fallbacks
+
+`draft-context` returns evidence sufficiency metadata for reply drafting. Agents should show the sufficiency state and reasons with the evidence summary.
+
+When evidence is sufficient, the agent should draft a direct answer. When evidence is missing, weak, conflicting, or the answer needs private/account-specific details, the agent should offer both a cautious evidence-limited answer and a DM follow-up asking only for the missing support-blocking information.
+
+DM follow-up wording is a Fallback Draft Option. It is not a Manual Knowledge Note, does not resolve evidence conflicts, and should not be cited as support truth.
+
 ## Manual Knowledge
 
 Manual Knowledge Notes are profile-local support facts, policy changes, or operational caveats that should influence future answers. Prefer saving them through Codex: Codex should parse the note text, effective date, optional expiry date, and caveats, then show those fields for operator confirmation before it runs the local save command.
