@@ -52,4 +52,4 @@ Add or update focused tests for changed behavior. The confirmation flow is espec
 - missing reply targets must fail rather than silently posting a normal message;
 - infrastructure failures must not burn a usable confirmation token before a send is possible.
 
-Use fakes at adapter boundaries where possible. Real Telegram, Playwright, BGE-M3, and sqlite-vec integrations should stay optional so the core suite remains fast and local.
+Use fakes at adapter boundaries where possible. Real Telegram, Playwright, BGE Small, and sqlite-vec integrations should stay optional so the core suite remains fast and local.

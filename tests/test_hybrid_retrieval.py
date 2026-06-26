@@ -6,7 +6,7 @@ from datetime import date
 from types import SimpleNamespace
 
 from tg_support.indexing.chunking import chunk_manual_notes, chunk_messages, chunk_pages
-from tg_support.indexing.embeddings import BgeM3EmbeddingModel, RetrievalDependencyError
+from tg_support.indexing.embeddings import BgeEmbeddingModel, RetrievalDependencyError
 from tg_support.indexing.hybrid import reciprocal_rank_fusion
 from tg_support.indexing.vector import SQLiteVecStore
 from tg_support.storage.db import DocumentRecord
@@ -82,9 +82,9 @@ def test_bge_model_load_failure_is_structured(monkeypatch):
     monkeypatch.setitem(sys.modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=FailingSentenceTransformer))
 
     try:
-        BgeM3EmbeddingModel().embed("hello")
+        BgeEmbeddingModel().embed("hello")
     except RetrievalDependencyError as exc:
-        assert "Could not load embedding model BAAI/bge-m3" in str(exc)
+        assert "Could not load embedding model BAAI/bge-small-en-v1.5" in str(exc)
     else:
         raise AssertionError("expected structured embedding load failure")
 
@@ -104,9 +104,9 @@ def test_bge_encode_failure_is_structured(monkeypatch):
     monkeypatch.setitem(sys.modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=SentenceTransformer))
 
     try:
-        BgeM3EmbeddingModel().embed("hello")
+        BgeEmbeddingModel().embed("hello")
     except RetrievalDependencyError as exc:
-        assert "Could not encode text with embedding model BAAI/bge-m3" in str(exc)
+        assert "Could not encode text with embedding model BAAI/bge-small-en-v1.5" in str(exc)
     else:
         raise AssertionError("expected structured embedding encode failure")
 

@@ -16,7 +16,7 @@ The `scripts/tg-support` helper also bootstraps its own Python runtime outside t
 
 Set `TG_SUPPORT_VENV` to use a different runtime environment.
 
-The helper installs retrieval dependencies for normal operator use. Retrieval uses SQLite FTS5, sqlite-vec, and local `BAAI/bge-m3` embeddings. If your local Python or SQLite build cannot load sqlite-vec, `index` returns a JSON error with the SQLite version and the next setup action instead of falling back to hash vectors.
+The helper installs retrieval dependencies for normal operator use. Retrieval uses SQLite FTS5, sqlite-vec, and local `BAAI/bge-small-en-v1.5` embeddings. If your local Python or SQLite build cannot load sqlite-vec, `index` returns a JSON error with the SQLite version and the next setup action instead of falling back to hash vectors.
 
 ## Install For Development
 

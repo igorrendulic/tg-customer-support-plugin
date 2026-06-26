@@ -46,9 +46,9 @@ def test_index_run_does_not_delete_source_records(db):
     seed_messages(db)
     chunk_messages(db)
     before = db.count("messages")
-    db.record_index_run("BAAI/bge-m3", "sqlite-hybrid-v1")
+    db.record_index_run("BAAI/bge-small-en-v1.5", "sqlite-hybrid-v1")
     assert db.count("messages") == before
-    assert db.latest_index_run("BAAI/bge-m3")["source_signature"] == db.chunk_signature()
+    assert db.latest_index_run("BAAI/bge-small-en-v1.5")["source_signature"] == db.chunk_signature()
 
 
 def test_rebuild_documents_preserves_source_metadata(db):
@@ -98,7 +98,7 @@ def test_initialize_migrates_v1_chunks_to_manual_source_type(tmp_path):
               vector_json TEXT NOT NULL
             );
             INSERT INTO lexical_refs(chunk_id, terms_json) VALUES (1, '["legacy"]');
-            INSERT INTO vector_refs(chunk_id, embedding_model, vector_json) VALUES (1, 'local-hash-v1', '[1.0]');
+            INSERT INTO vector_refs(chunk_id, embedding_model, vector_json) VALUES (1, 'legacy-prototype', '[1.0]');
             """
         )
 

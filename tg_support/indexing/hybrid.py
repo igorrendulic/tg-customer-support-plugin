@@ -4,7 +4,7 @@ from datetime import date, datetime
 
 from tg_support.indexing.embeddings import EmbeddingModel, RetrievalDependencyError
 from tg_support.indexing.lexical import lexical_search
-from tg_support.indexing.vector import InMemoryVectorStore, SQLiteVecStore, VectorSearcher
+from tg_support.indexing.vector import VectorSearcher, VectorStore
 from tg_support.storage.db import DocumentRecord, SupportDatabase
 
 
@@ -25,7 +25,7 @@ class HybridRetriever:
         self,
         db: SupportDatabase,
         embedding_model: EmbeddingModel | None = None,
-        vector_store: SQLiteVecStore | InMemoryVectorStore | None = None,
+        vector_store: VectorStore | None = None,
     ):
         self.db = db
         self.vector_searcher = VectorSearcher(db, model=embedding_model, store=vector_store)

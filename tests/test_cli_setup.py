@@ -24,7 +24,7 @@ def test_cli_setup_stores_normalized_config(tmp_path, capsys, monkeypatch):
     assert output["ok"] is True
     config = load_config(tmp_path / "demo" / "config.json")
     assert config.chat == "support"
-    assert config.embedding_model == "BAAI/bge-m3"
+    assert config.embedding_model == "BAAI/bge-small-en-v1.5"
     assert config.vector_mode == "sqlite-vec"
 
 
