@@ -406,6 +406,21 @@ class SupportDatabase:
             rows = conn.execute(f"SELECT * FROM documents WHERE id IN ({placeholders})", id_list).fetchall()
         return {row["id"]: self._document_from_row(row) for row in rows}
 
+    def telegram_documents_by_author_username(self, username: str) -> list[DocumentRecord]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT d.*
+                FROM documents d
+                JOIN messages m ON m.id = d.source_id
+                WHERE d.source_type = 'telegram'
+                  AND lower(m.author_username) = ?
+                ORDER BY m.sent_at DESC, d.id ASC
+                """,
+                (username.casefold(),),
+            ).fetchall()
+        return [self._document_from_row(row) for row in rows]
+
     def search_fts(self, query: str, limit: int) -> list[tuple[DocumentRecord, float]]:
         if not query:
             return []

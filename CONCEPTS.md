@@ -37,6 +37,9 @@ Read-only, profile-local evidence gathered from a configured GitHub repository a
 ### SQLite Hybrid Search Index
 The Support Profile-local retrieval projection that combines SQLite FTS5 exact-term search, sqlite-vec vector search, and local `BAAI/bge-small-en-v1.5` embeddings over source-linked indexed documents.
 
+### Username Exact Match Boost
+The search-ranking behavior where an exact Telegram author username query is treated as a strong evidence signal, while still returning source-linked Telegram message or context evidence rather than a standalone user record.
+
 ### Conflict Check
 The retrieval-time safety step that compares an applicable Manual Knowledge Note against indexed Telegram or web evidence, re-queries fresher evidence when needed, and asks the Support Operator before resolving contested support truth.
 
