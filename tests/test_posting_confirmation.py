@@ -57,6 +57,15 @@ def test_confirmed_draft_sends_once(db):
         apply_confirmation(db, draft["post_token"], gateway)
 
 
+def test_confirmed_draft_sends_actual_newline_bytes(db):
+    gateway = SendGateway()
+    draft = create_draft(db, "support", "a\n\nb", {}, target_message_id=10)
+    result = apply_confirmation(db, draft["post_token"], gateway)
+    assert result["status"] == "posted"
+    assert gateway.calls == [("support", "a\n\nb", 10)]
+    assert gateway.calls[0][1] != "a\\n\\nb"
+
+
 def test_post_without_reply_target_fails(db):
     gateway = SendGateway()
     draft = create_draft(db, "support", "hello", {}, target_message_id=None)
