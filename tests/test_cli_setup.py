@@ -646,6 +646,76 @@ def test_confirm_telegram_error_returns_json_and_keeps_token_retryable(tmp_path,
     assert output["telegram_message_id"] == 777
 
 
+def test_draft_create_normalizes_literal_newline_text(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    assert main(["setup", "--chat", "support"]) == 0
+    capsys.readouterr()
+
+    assert main(["draft-create", "--text", "a\\n\\nb", "--message-id", "10"]) == 0
+    output = json.loads(capsys.readouterr().out)
+
+    assert output["message_text"] == "a\n\nb"
+    config = load_config(tmp_path / "default" / "config.json")
+    with sqlite3.connect(config.db_path) as conn:
+        stored = conn.execute("SELECT message_text FROM drafts").fetchone()[0]
+    assert stored == "a\n\nb"
+
+
+def test_draft_create_keeps_already_multiline_text(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    assert main(["setup", "--chat", "support"]) == 0
+    capsys.readouterr()
+
+    text = "a\n\nb\\n"
+    assert main(["draft-create", "--text", text, "--message-id", "10"]) == 0
+    output = json.loads(capsys.readouterr().out)
+
+    assert output["message_text"] == text
+
+
+def test_draft_create_text_file_preserves_paragraph_breaks(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    assert main(["setup", "--chat", "support"]) == 0
+    text_file = tmp_path / "draft.txt"
+    text_file.write_text("first\n\nsecond\n", encoding="utf-8")
+    capsys.readouterr()
+
+    assert main(["draft-create", "--text-file", str(text_file), "--message-id", "10"]) == 0
+    output = json.loads(capsys.readouterr().out)
+
+    assert output["message_text"] == "first\n\nsecond\n"
+
+
+def test_draft_create_text_stdin_preserves_paragraph_breaks(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    assert main(["setup", "--chat", "support"]) == 0
+    monkeypatch.setattr("sys.stdin", StringIO("first\n\nsecond\n"))
+    capsys.readouterr()
+
+    assert main(["draft-create", "--text-stdin", "--message-id", "10"]) == 0
+    output = json.loads(capsys.readouterr().out)
+
+    assert output["message_text"] == "first\n\nsecond\n"
+
+
+def test_draft_create_requires_exactly_one_text_source(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("tg_support.cli.profile_dir", lambda profile: tmp_path / profile)
+    assert main(["setup", "--chat", "support"]) == 0
+    text_file = tmp_path / "draft.txt"
+    text_file.write_text("file text", encoding="utf-8")
+    capsys.readouterr()
+
+    try:
+        main(["draft-create", "--text", "inline", "--text-file", str(text_file), "--message-id", "10"])
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("expected argparse to reject multiple text sources")
+
+    error = capsys.readouterr().err
+    assert "not allowed with argument" in error
+
+
 def test_draft_context_for_known_user(db, monkeypatch):
     patch_test_retriever(monkeypatch)
     seed_messages(db)

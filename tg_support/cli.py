@@ -364,11 +364,26 @@ def command_repo_evidence(args: argparse.Namespace) -> int:
     return emit({"ok": True, "repository_evidence": evidence})
 
 
+def normalize_draft_text(text: str) -> str:
+    if "\\n" in text and "\n" not in text:
+        return text.replace("\\n", "\n")
+    return text
+
+
+def draft_text_from_args(args: argparse.Namespace) -> str:
+    if args.text is not None:
+        return normalize_draft_text(args.text)
+    if args.text_file is not None:
+        return Path(args.text_file).read_text(encoding="utf-8")
+    return sys.stdin.read()
+
+
 def command_draft_create(args: argparse.Namespace) -> int:
     config, db = db_for_args(args)
     evidence = json.loads(Path(args.evidence_json).read_text()) if args.evidence_json else {}
-    result = create_draft(db, config.chat, args.text, evidence, target_user=args.user, target_message_id=args.message_id)
-    return emit({"ok": True, **result, "target_chat": config.chat, "target_user": args.user, "target_message_id": args.message_id, "message_text": args.text})
+    message_text = draft_text_from_args(args)
+    result = create_draft(db, config.chat, message_text, evidence, target_user=args.user, target_message_id=args.message_id)
+    return emit({"ok": True, **result, "target_chat": config.chat, "target_user": args.user, "target_message_id": args.message_id, "message_text": message_text})
 
 
 def command_knowledge_add(args: argparse.Namespace) -> int:
@@ -457,7 +472,10 @@ def build_parser() -> argparse.ArgumentParser:
     draft.set_defaults(func=command_draft_context)
 
     create = sub.add_parser("draft-create")
-    create.add_argument("--text", required=True)
+    text_source = create.add_mutually_exclusive_group(required=True)
+    text_source.add_argument("--text")
+    text_source.add_argument("--text-file")
+    text_source.add_argument("--text-stdin", action="store_true")
     create.add_argument("--user")
     create.add_argument("--message-id", type=int)
     create.add_argument("--evidence-json")
